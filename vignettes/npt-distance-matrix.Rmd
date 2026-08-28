@@ -1,0 +1,308 @@
+---
+title: "Computing an NPT Distance Matrix"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Computing an NPT Distance Matrix}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+## Overview
+
+Comparing multivariate distribution-valued observations requires a metric on probability distributions. While the standard multivariate 2-Wasserstein distance is geometrically appealing, it suffers from heavy computational costs and the curse of dimensionality. **Nonparanormal Transport (NPT)** provides a fast, closed-form metric grounded in the nonparanormal (Gaussian copula) framework (Shao et al., 2026; Park and Gaynanova, 2026).
+
+This vignette walks through the complete workflow:
+
+0. **Mathematical Preliminaries**: Defining nonparanormal distributions and the NPT distance.
+1. **Preparing Distributional Data**: Formatting multi-subject sample matrices $\mathcal{Y} = (Y_1, \dots, Y_n)$.
+2. **Distance Preprocessing and Distribution Summaries**: Precomputing marginal quantiles and latent correlation structures via `as_nonparanormal()`.
+3. **Pairwise Squared NPT Distances**: Evaluating the pairwise distance matrix and decomposing marginal vs. correlation differences.
+4. **Visualizing Distributional Geometry via MDS**: Embedding distribution distances in low dimensions.
+5. **Notes on Scale and Weight Adjustment**: Balancing variable units and tuning the latent correlation weight.
+
+---
+
+## 0. Mathematical Preliminaries
+
+### The Nonparanormal Distribution
+
+A continuous random vector $Y = (Y^{(1)}, \dots, Y^{(d)})^\top \sim P$ on $\mathbb{R}^d$ follows a **nonparanormal distribution** (Liu et al., 2009) if there exist strictly increasing marginal transformations $f = (f^{(1)}, \dots, f^{(d)})^\top$ such that
+$$
+f(Y) = \big(f^{(1)}(Y^{(1)}), \dots, f^{(d)}(Y^{(d)})\big)^\top \sim \mathcal{N}_d(0, R),
+$$
+where $R \in \mathbb{R}^{d \times d}$ is a latent Gaussian correlation matrix with $\operatorname{diag}(R) = I_d$.
+
+Let $F^{(j)}$ and $Q^{(j)} = (F^{(j)})^{-1}$ denote the marginal CDF and quantile function of coordinate $Y^{(j)}$. With $f^{(j)} = \Phi^{-1} \circ F^{(j)}$, $Y$ is equivalently generated from a latent Gaussian vector $Z \sim \mathcal{N}_d(0, R)$ via $Y^{(j)} = Q^{(j)}(\Phi(Z^{(j)}))$ for $j = 1, \dots, d$. Thus, $P$ is completely characterized by its $d$ marginal distributions $P^{(j)}$ (or quantiles $Q^{(j)}$) and latent correlation matrix $R$.
+
+### Nonparanormal Transport (NPT) Metric
+
+For any two nonparanormal distributions $P_i$ and $P_k$ on $\mathbb{R}^d$, the squared NPT distance is defined as:
+
+$$
+d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + d_W^2\big(\mathcal{N}_d(0, R_i), \mathcal{N}_d(0, R_k)\big),
+$$
+
+where $d_W$ is the 2-Wasserstein distance. Both components have closed-form expressions:
+
+- **Marginal Wasserstein distances**: $d_W^2(P_i^{(j)}, P_k^{(j)}) = \|Q_i^{(j)} - Q_k^{(j)}\|_{L^2}^2 = \int_0^1 \big(Q_i^{(j)}(p) - Q_k^{(j)}(p)\big)^2 \, dp$.
+- **Latent Gaussian Wasserstein distance**: $d_W^2(\mathcal{N}_d(0, R_i), \mathcal{N}_d(0, R_k)) = \mathcal{B}^2(R_i, R_k) = 2d - 2 \operatorname{tr}\big((R_i^{1/2} R_k R_i^{1/2})^{1/2}\big)$ (the Bures--Wasserstein metric).
+
+This closed-form formulation enables very fast computation (illustrated below) while closely capturing the geometric behavior of the 2-Wasserstein distance (Park and Gaynanova, 2026).
+
+---
+
+## 1. Preparing Distributional Data
+
+The input to `NonparaTransport` is a named list of $n$ numeric matrices:
+
+$$\mathcal{Y} = (Y_1, \dots, Y_n)$$
+
+where each matrix $Y_i \in \mathbb{R}^{N_i \times d}$ represents empirical observations sampled from distribution $P_i$. 
+
+Key properties of this data structure:
+
+- **Unequal Sample Sizes**: Sample sizes $N_i$ can vary freely across distributions (e.g., subject 1 has $N_1 = 1,120$ measurements, subject 2 has $N_2 = 890$).
+- **Shared Variables**: All matrices must share the same $d$ columns in the same order ($d \ge 2$).
+
+### Simulating Large-Scale Multivariate Distributional Data
+
+To demonstrate how NPT scales efficiently and distinguishes different modes of distributional variation across large collections, we simulate $n = 1000$ empirical distributions with $d = 10$ variables. Each distribution has unequal sample size $N_i \approx 1000$ (varying roughly between $700$ and $1300$, totaling over 1 million empirical observations across the dataset).
+
+The distributions are drawn from three distinct generative regimes with subject-specific variation:
+
+1. **Distribution Group 1 (Baseline)**: Non-Gaussian Gamma marginals ($\mathrm{Gamma}(\text{shape}=3, \text{rate}=2)$) with coordinate-wise random perturbations ($\epsilon_{i,j} \sim \mathcal{N}(0, 0.1^2)$) and autoregressive latent correlation parameter $\rho_i = 0.6 + 0.1\,U_i$, where $U_i \sim \mathrm{Uniform}(0, 1)$ ($\Sigma_{j, j'} = \rho_i^{|j - j'|}$).
+2. **Distribution Group 2 (Mean Shift)**: Location-shifted Gamma marginals with an additional deterministic shift of $+1.5$ ($1.5 + \epsilon_{i,j}$) and identical autoregressive latent correlation parameter $\rho_i = 0.6 + 0.1\,U_i$.
+3. **Distribution Group 3 (Correlation Shift)**: Baseline Gamma marginals with coordinate-wise random perturbations ($\epsilon_{i,j} \sim \mathcal{N}(0, 0.1^2)$) and weak/decoupled latent correlation $\rho_i = 0.0 + 0.1\,U_i$.
+
+```{r setup}
+library(NonparaTransport)
+
+set.seed(2026)
+
+n <- 1000L
+d <- 10L
+variable_names <- paste0("sensor_", seq_len(d))
+
+# Unequal sample sizes N_i ~ 1000 roughly within [700, 1300]
+sample_sizes <- round(rnorm(n, mean = 1000, sd = 100))
+sample_sizes <- pmax(700L, pmin(1300L, sample_sizes))
+
+# Assign each distribution to one of the three generative groups
+group_labels <- sample(c("Baseline", "Mean Shift", "Correlation Shift"), size = n, replace = TRUE)
+
+# Heterogeneous measurement centers and scales across sensor channels
+channel_centers <- seq(20, 110, length.out = d)
+channel_scales  <- seq(2, 20, length.out = d)
+
+# Simulate sample matrices Y_i from each distribution P_i with subject-specific variation
+distributional_data <- vector("list", n)
+for (i in seq_len(n)) {
+  N_i <- sample_sizes[i]
+  grp <- group_labels[i]
+
+  # Subject-specific correlation parameter rho_i
+  rho_i <- if (grp == "Correlation Shift") {
+    runif(1L, min = 0.0, max = 0.1)
+  } else {
+    0.6 + runif(1L, min = 0.0, max = 0.1)
+  }
+  Sigma_i <- rho_i^abs(outer(seq_len(d), seq_len(d), "-"))
+  L_i <- chol(Sigma_i)
+
+  # Subject-specific coordinate-wise shift vector with random perturbation
+  shift_i <- (if (grp == "Mean Shift") 1.5 else 0.0) + rnorm(d, mean = 0, sd = 0.1)
+
+  Z <- matrix(rnorm(N_i * d), nrow = N_i, ncol = d) %*% L_i
+  U <- pnorm(Z)
+  raw_samples <- matrix(qgamma(U, shape = 3, rate = 2), nrow = N_i, ncol = d)
+  shifted_samples <- sweep(raw_samples, 2, shift_i, "+")
+
+  scaled_samples <- sweep(shifted_samples, 2, channel_scales, "*")
+  samples <- sweep(scaled_samples, 2, channel_centers, "+")
+  colnames(samples) <- variable_names
+  distributional_data[[i]] <- samples
+}
+names(distributional_data) <- sprintf("dist_%04d", seq_len(n))
+
+# Inspect dataset scale: n distributions, total observations > 1 million
+length(distributional_data)
+summary(vapply(distributional_data, nrow, integer(1L)))
+```
+
+---
+
+## 2. Distance Preprocessing and Distribution Summaries
+
+Evaluating all $\binom{n}{2}$ pairwise distances directly from raw sample matrices would require sorting columns and estimating copula correlations repeatedly for every pair. 
+
+Instead, `as_nonparanormal()` extracts all necessary mathematical quantities in a single pass:
+
+- **Marginal Quantile Functions ($Q_i^{(j)}$)**: Empirical quantiles evaluated at $M$ equal-width midpoint probabilities $p_k = (k - 0.5)/M \in (0, 1)$.
+  - $M = 100$ grid points are often enough for univariate Wasserstein distance evaluations.
+- **Latent Correlation Matrices ($R_i$)**: Estimated via Kendall's $\tau_a$ sine bridge $\rho = \sin(\pi \tau_a / 2)$ with positive-definite projection.
+
+```{r summaries}
+precomputed_summaries <- as_nonparanormal(
+  distributional_data,
+  M = 100L,
+  standardize = TRUE
+)
+precomputed_summaries
+```
+
+The resulting `nonparanormal` object contains the marginal quantiles and latent correlation structures. 
+
+#### What does `standardize = TRUE` do?
+
+The marginal Wasserstein terms retain the physical units and scales of their variables, whereas the latent correlation term is scale invariant. The distance workflow scales the marginal distributions to have comparable scales. For variable $j$, define
+
+$$
+m_j = \operatorname{median}(\mathcal{X}_j), \qquad
+s_j = \operatorname{median}_{x\in\mathcal{X}_j}|x-m_j|,
+$$
+
+where $\mathcal{X}_j$ pools every observation of variable $j$ across all $n$ distributions. Each observation $x$ is replaced by $(x-m_j)/s_j$.
+
+This transformation places the marginal variables on comparable robust scales. Because the same positive affine transformation is used for every distribution, it leaves the latent copula correlations unchanged.
+
+This vignette uses standardized representations for distance computation. Regression examples (see `vignette("npt-regression")`) instead retain the original measurement units.
+
+---
+
+## 3. Pairwise Squared NPT Distances
+
+With precomputed summaries, `pairwise_npt_distance()` rapidly evaluates the full $n \times n$ symmetric distance matrix across all $\binom{1000}{2} = 499,500$ pairs:
+
+```{r distance-total}
+timing_pairwise <- system.time({
+  squared_npt <- pairwise_npt_distance(precomputed_summaries)
+})
+dim(squared_npt)
+round(squared_npt[1:4, 1:4], 3)
+cat(sprintf("Evaluated %s pairwise distances in %.2f seconds.\n",
+            format(n * (n - 1) / 2, big.mark = ","),
+            timing_pairwise[["elapsed"]]))
+```
+
+### Inspecting Marginal vs. Correlation Components
+
+Setting `decompose = TRUE` decomposes the total squared distance into its marginal and correlation components:
+
+$$d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + \mathcal{B}^2(R_i, R_k)$$
+
+```{r decomposition}
+parts <- pairwise_npt_distance(
+  precomputed_summaries,
+  decompose = TRUE
+)
+
+# Identify representative indices from the three generative groups
+idx_baseline <- which(group_labels == "Baseline")[1L]
+idx_mean_shift <- which(group_labels == "Mean Shift")[1L]
+idx_correlation_shift <- which(group_labels == "Correlation Shift")[1L]
+
+cat("1. Baseline vs. Mean Shift:\n")
+cat(sprintf("  Marginal component:    %.3f\n", parts$marginal[idx_baseline, idx_mean_shift]))
+cat(sprintf("  Correlation component: %.3f\n", parts$correlation[idx_baseline, idx_mean_shift]))
+cat(sprintf("  Total d_NPT^2 distance:  %.3f\n", parts$total[idx_baseline, idx_mean_shift]))
+
+cat("\n2. Baseline vs. Correlation Shift:\n")
+cat(sprintf("  Marginal component:    %.3f\n", parts$marginal[idx_baseline, idx_correlation_shift]))
+cat(sprintf("  Correlation component: %.3f\n", parts$correlation[idx_baseline, idx_correlation_shift]))
+cat(sprintf("  Total d_NPT^2 distance:  %.3f\n", parts$total[idx_baseline, idx_correlation_shift]))
+```
+
+### Statistical Interpretation of the Decomposition
+
+- **Baseline vs. Mean Shift**: 
+  - Marginal component dominates ($\sum_{j=1}^d d_W^2(P_i^{(j)}, P_k^{(j)}) \approx 39.16$), capturing the substantial location shift across the $d = 10$ variables.
+  - Correlation component is near zero ($\mathcal{B}^2(R_i, R_k) \approx 0.05$), correctly identifying that both distributions share strong autoregressive coupling ($\rho \approx 0.6\text{--}0.7$).
+- **Baseline vs. Correlation Shift**: 
+  - Marginal component is small ($\sum_{j=1}^d d_W^2(P_i^{(j)}, P_k^{(j)}) \approx 0.42$), reflecting shared baseline marginal distributions up to minor random noise.
+  - Correlation component is larger ($\mathcal{B}^2(R_i, R_k) \approx 1.85$), capturing the marked reduction in latent correlation ($\rho \approx 0.65$ vs $\rho \approx 0.05$).
+
+This exact decomposition provides immediate physical interpretability that standard multivariate Wasserstein distances cannot easily offer.
+
+---
+
+## 4. Visualizing Distributional Geometry via MDS
+
+To visualize the geometric configuration of the $n = 1000$ distributions, we apply Classical Multidimensional Scaling (`cmdscale`) to the pairwise Euclidean distances $D(P_i, P_k) = d_{\mathrm{NPT}}(P_i, P_k)$:
+
+```{r mds-plot, fig.width = 6.5, fig.height = 5.5}
+# Convert squared distances to Euclidean metric distances
+npt_dist <- sqrt(squared_npt)
+
+# 2D Multidimensional Scaling
+mds_fit <- cmdscale(as.dist(npt_dist), k = 2, eig = TRUE)
+mds_coords <- mds_fit$points
+
+# Color palette by generative group
+palette_colors <- c("Baseline" = "#0072B2", "Mean Shift" = "#D55E00", "Correlation Shift" = "#009E73")
+point_colors <- adjustcolor(palette_colors[group_labels], alpha.f = 0.45)
+
+# Plot 2D embedding
+plot(
+  mds_coords,
+  col = point_colors,
+  pch = 16,
+  cex = 0.85,
+  asp = 1,
+  xlab = "MDS Dimension 1 (Marginal Shift Axis)",
+  ylab = "MDS Dimension 2 (Correlation Shift Axis)",
+  main = sprintf("NPT Geometric Embedding (n = %d Distributions)", n)
+)
+legend(
+  "topleft",
+  legend = names(palette_colors),
+  col = palette_colors,
+  pch = 16,
+  pt.cex = 1.2,
+  bty = "n"
+)
+```
+
+The resulting 2D embedding clearly separates the 1,000 distributions into distinct geometric clusters: the "Mean Shift" distributions are separated along Dimension 1 (driven by marginal quantile differences), while the "Correlation Shift" distributions are separated along Dimension 2 (driven by latent correlation differences).
+
+---
+
+## 5. Notes on Scale and Weight Adjustment
+
+### Marginal Scale Standardization
+
+The marginal 2-Wasserstein terms $d_W^2(P_i^{(j)}, P_k^{(j)})$ retain the physical units and measurement scales of each variable $j$, whereas the latent correlation term $\mathcal{B}^2(R_i, R_k)$ is dimensionless and bounded:
+$$
+0 \le \mathcal{B}^2(R_i, R_k) \le 2d - 2\sqrt{d}.
+$$
+If raw variables have widely differing units (e.g., heart rate in bpm vs. body temperature in degrees Celsius), unstandardized marginal differences in large-scale variables could overwhelm both smaller-scale variables and the latent correlation term.
+
+For this reason, `as_nonparanormal(..., standardize = TRUE)` applies pooled median and raw-MAD scaling across the collection by default (as detailed in Section 2), placing all marginal variables on comparable scales while leaving copula correlations invariant.
+
+### Tuning the Latent Correlation Weight ($c$)
+
+To optionally adjust the relative contribution of latent dependence differences versus marginal quantile differences, the **weighted squared NPT distance** is defined as:
+
+$$
+d_{\mathrm{NPT}, c}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + c\,\mathcal{B}^2(R_i, R_k), \qquad c > 0.
+$$
+
+The parameter $c$ corresponds to the `bw_weight` argument in `pairwise_npt_distance()` (defaulting to `bw_weight = 1`). Tuning $c$ scales only the latent Gaussian correlation term without altering or recomputing the marginal quantiles:
+
+```{r bw-sensitivity}
+bw_weights <- c(0.5, 1, 2)
+weighted_totals <- lapply(
+  bw_weights,
+  function(weight) pairwise_npt_distance(
+    precomputed_summaries,
+    bw_weight = weight
+  )
+)
+names(weighted_totals) <- paste0("c_", bw_weights)
+round(vapply(weighted_totals, function(distance) distance[idx_baseline, idx_correlation_shift], numeric(1)), 3)
+```
+
+The preprocessing and marginal term $\sum_{j=1}^d d_W^2(P_i^{(j)}, P_k^{(j)})$ remain fixed across these calculations; only the weighted correlation term $c\,\mathcal{B}^2(R_i, R_k)$ changes.

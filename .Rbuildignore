@@ -1,0 +1,13 @@
+^NonparaTransport\.Rproj$
+^\.Rproj\.user$
+^\.tmp-library$
+^README\.Rmd$
+^README\.html$
+^man/figures$
+^\.archive$
+^\.github$
+^vignettes/.*\.html$
+^LICENSE\.md$
+^doc$
+^Meta$
+^AGENTS\.md$

@@ -1,0 +1,411 @@
+---
+title: "Fréchet Regression of Multivariate Distributions with Nonparanormal Transport"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Fréchet Regression of Multivariate Distributions with Nonparanormal Transport}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  error = FALSE,
+  fig.width = 6,
+  fig.height = 4
+)
+library(NonparaTransport)
+```
+
+## Overview
+
+Regression is a fundamental statistical framework for relating responses to predictors. When the response is a random probability distribution $P$ on $\mathbb{R}^d$ and the predictor is a Euclidean vector $X \in \mathbb{R}^p$ (e.g., age, clinical exposure, or treatment dosage), the relationship can be modeled through *Fréchet regression* of metric space-valued responses on Euclidean predictors (Petersen and Müller, 2019). However, methods based on the standard 2-Wasserstein metric or its approximations (Sinkhorn, sliced Wasserstein) face computational and theoretical limitations in higher dimensions.
+
+In our method (Park and Gaynanova, 2026), we model multivariate distributional responses within the semiparametric nonparanormal family. Then, by combining the Nonparanormal Transport (NPT) metric with the Fréchet regression framework, we **decouple** the regression into tractable subproblems:
+
+1. $d$ independent regressions of univariate marginals under the 2-Wasserstein distance.
+2. One regression of the latent Gaussian correlation matrix using the Bures--Wasserstein distance.
+
+This decoupling enables efficient regression computation and more granular interpretation of predictor effects on marginal distributions versus their dependence structure.
+
+This vignette demonstrates the complete regression workflow:
+
+0. **Mathematical Preliminaries**: Fréchet regression under NPT.
+1. **Preparing Predictor and Distributional Response Data**: Structuring $X \in \mathbb{R}^{n \times p}$ and $\mathcal{Y} = (Y_1, \dots, Y_n)$.
+2. **Representing Distributional Responses**: Precomputing quantile grids and copula correlations via `as_nonparanormal()`.
+3. **Fitting Fréchet Regression and Making Predictions**: Predicting at target points and fitting in-sample models via `npt_frechetreg()`.
+4. **Visualizing Distributional Predictions and Latent Correlations**: Reconstructing 2D density heatmaps for target predictor values and overlaying fitted latent-correlation trajectories on observed correlations.
+5. **Goodness-of-Fit via Component-Wise $R^2$**: Quantifying explained variation with `npt_component_r2()`.
+6. **Hypothesis Testing via Permutation Testing**: Westfall--Young FWER-controlled inference via `npt_permutation_test()`.
+
+---
+
+## 0. Mathematical Preliminaries
+
+### The Nonparanormal Distribution
+
+A continuous random vector $Y = (Y^{(1)}, \dots, Y^{(d)})^\top \sim P$ on $\mathbb{R}^d$ follows a **nonparanormal distribution** (Liu et al., 2009) if there exist strictly increasing marginal transformations $f = (f^{(1)}, \dots, f^{(d)})^\top$ such that:
+$$
+f(Y) = \big(f^{(1)}(Y^{(1)}), \dots, f^{(d)}(Y^{(d)})\big)^\top \sim \mathcal{N}_d(0, R),
+$$
+where $R \in \mathbb{R}^{d \times d}$ is a latent Gaussian correlation matrix with $\operatorname{diag}(R) = I_d$.
+
+Let $F^{(j)}$ and $Q^{(j)} = (F^{(j)})^{-1}$ denote the marginal CDF and quantile function of coordinate $Y^{(j)}$. With $f^{(j)} = \Phi^{-1} \circ F^{(j)}$, $Y$ is equivalently generated from a latent Gaussian vector $Z \sim \mathcal{N}_d(0, R)$ via $Y^{(j)} = Q^{(j)}(\Phi(Z^{(j)}))$ for $j = 1, \dots, d$. Thus, $P$ is completely characterized by its $d$ marginal distributions $P^{(j)}$ (or quantiles $Q^{(j)}$) and latent correlation matrix $R$.
+
+### Fréchet Regression under Nonparanormal Transport
+
+Given $n$ observed pairs $(X_i, P_i)$ for $i = 1, \dots, n$ with predictors $X_i \in \mathbb{R}^p$ and nonparanormal distributions $P_i$, Fréchet regression estimates the conditional distribution $\hat{P}(x)$ at target predictor $x \in \mathbb{R}^p$ by minimizing weighted squared NPT distances (Petersen and Müller, 2019; Park and Gaynanova, 2026):
+
+$$
+\hat{P}(x) = \arg\min_{P} \sum_{i=1}^n s_i(x)\, d_{\mathrm{NPT}}^2(P, P_i),
+$$
+where $s_i(x)$ are Fréchet regression weights (such as local linear or global linear weights) satisfying $\sum_{i=1}^n s_i(x) = 1$.
+
+Because the squared NPT distance decomposes additively:
+$$
+d_{\mathrm{NPT}}^2(P, P_i) = \sum_{j=1}^d d_W^2\big(P^{(j)}, P_i^{(j)}\big) + \mathcal{B}^2(R, R_i),
+$$
+where $\mathcal{B}^2(R, R_i) = d_W^2(\mathcal{N}_d(0, R), \mathcal{N}_d(0, R_i))$ is the Bures--Wasserstein metric on latent correlation matrices, the global multivariate optimization decouples exactly into $d + 1$ independent subproblems:
+
+1. **$d$ Marginal 2-Wasserstein Quantile Regressions**: For each variable $j = 1, \dots, d$, we use the equality $d_W^2\big(P^{(j)}, P_i^{(j)}\big) = \|Q^{(j)} - Q_i^{(j)}\|^2_{L^2}$ to compute the regression at the quantile level:
+   $$
+   \hat{Q}^{(j)}(x) = \arg\min_{Q \in \mathcal{K}} \sum_{i=1}^n s_i(x)\, \|Q_i^{(j)} - Q\|_{L^2}^2
+   $$
+   where $\mathcal{K} \subset L^2(0, 1)$ is the closed convex cone of non-decreasing quantile functions, solved using the package `fastfrechet` (Coulter et al., 2025).
+2. **One Latent Correlation Regression**:
+   $$
+   \hat{R}(x) = \arg\min_{R \in \mathcal{E}_d} \sum_{i=1}^n s_i(x)\, \mathcal{B}^2(R, R_i),
+   $$
+   where $\mathcal{E}_d = \{R \in \mathcal{S}_+^{d \times d} : \operatorname{diag}(R) = I_d\}$ is the set of $d \times d$ correlation matrices, estimated via projected Riemannian gradient descent with respect to the Bures--Wasserstein metric $\mathcal{B}$ (Park and Gaynanova, 2026).
+
+Once these regression problems are solved, the final nonparanormal regression output $\hat P(x)$ is reconstructed from the marginals $\hat Q^{(j)}(x)$ and the latent correlation matrix $\hat R(x)$. 
+
+---
+
+## 1. Preparing Predictor and Distributional Response Data
+
+The dataset consists of:
+
+- **Predictors ($X$)**: An $n \times p$ numeric matrix containing $p$ covariates for each of the $n$ subjects.
+- **Responses ($\mathcal{Y}$)**: A named list of $n$ numeric matrices $(Y_1, \dots, Y_n)$, where matrix $Y_i \in \mathbb{R}^{N_i \times d}$ represents $N_i$ empirical samples from distribution $P_i$.
+
+### Dataset simulation
+
+We similarly follow the simulation setting from Park and Gaynanova (2026). In this vignette, we use $n = 300$ distributional responses, $d = 2$ variables, and $N_i = 1000$ observations from every response. The two-dimensional predictors satisfy $X_i \sim \operatorname{Uniform}([-1, 1]^2)$.
+
+The response distributions are generated from marginal distributions and a latent correlation matrix, both of which depend on the predictor $X$:
+
+- **Marginals (signed-Gamma):** $(-1)^jY_i^{(j)} \sim \operatorname{Gamma}(2, \theta_{ij})$, where $\theta_{ij}$ varies across subjects even after conditioning on $X_i$. Writing $m_j(X_i)=3 + \beta_j^\top X_i$, we set $E(\theta_{ij}\mid X_i)=m_j(X_i)$ and $\operatorname{Var}(\theta_{ij}\mid X_i)=0.1$. We use $\beta_1=(0.5,0)^\top$ and $\beta_2=(0.4,-0.3)^\top$. 
+- **Latent correlation:** the subject-level latent correlation is $\rho_i=0.3X_i^{(1)}+\varepsilon_i$, where $\varepsilon_i\sim\mathcal{N}(0,0.1^2)$.
+
+
+```{r setup}
+library(NonparaTransport)
+library(ggplot2)
+
+set.seed(20260820)
+
+n_subjects <- 300L
+within_subject_sample_size <- 1000L
+variable_names <- c("negative_gamma", "positive_gamma")
+subject_names <- sprintf("subject_%03d", seq_len(n_subjects))
+
+# Two predictors for each distributional response
+X <- matrix(
+  runif(n_subjects * 2L, min = -1, max = 1),
+  nrow = n_subjects,
+  ncol = 2L,
+  dimnames = list(subject_names, c("predictor_1", "predictor_2"))
+)
+
+# Conditional means of the random Gamma scale parameters theta_ij
+marginal_coefficients <- rbind(c(0.5, 0), c(0.4, -0.3))
+conditional_scale_means <- 3 + X %*% t(marginal_coefficients)
+conditional_scale_variance <- 0.1
+subject_scales <- matrix(
+  rgamma(
+    length(conditional_scale_means),
+    shape = as.vector(conditional_scale_means)^2 /
+      conditional_scale_variance,
+    scale = conditional_scale_variance /
+      as.vector(conditional_scale_means)
+  ),
+  nrow = n_subjects,
+  ncol = length(variable_names),
+  dimnames = list(subject_names, variable_names)
+)
+
+# The numerical guard is inactive with overwhelming probability under this design.
+true_latent_rho <- pmin(
+  pmax(0.3 * X[, "predictor_1"] + rnorm(n_subjects, sd = 0.1), -0.99),
+  0.99
+)
+
+# Draw one empirical bivariate distribution from the subject-specific parameters.
+simulate_subject_distribution <- function(scales, rho, n_obs) {
+  latent_correlation <- matrix(c(1, rho, rho, 1), nrow = 2L)
+  latent_gaussian <- matrix(rnorm(n_obs * 2L), nrow = n_obs) %*%
+    chol(latent_correlation)
+  probabilities <- pmin(pmax(pnorm(latent_gaussian), 1e-10), 1 - 1e-10)
+
+  cbind(
+    negative_gamma = -qgamma(
+      1 - probabilities[, 1L],
+      shape = 2,
+      scale = scales[1L]
+    ),
+    positive_gamma = qgamma(
+      probabilities[, 2L],
+      shape = 2,
+      scale = scales[2L]
+    )
+  )
+}
+
+# Generate the response list Y = (Y_1, ..., Y_n).
+distributional_responses <- lapply(seq_len(n_subjects), function(i) {
+  simulate_subject_distribution(
+    scales = subject_scales[i, ],
+    rho = true_latent_rho[i],
+    n_obs = within_subject_sample_size
+  )
+})
+names(distributional_responses) <- subject_names
+```
+
+We verify the dataset properties and alignment:
+
+```{r inspect-input}
+list(
+  number_of_subjects = length(distributional_responses),
+  sample_size_range = range(vapply(distributional_responses, nrow, integer(1))),
+  variables = colnames(distributional_responses[[1L]]),
+  predictor_dimension = dim(X),
+  aligned = identical(names(distributional_responses), rownames(X))
+)
+```
+
+---
+
+## 2. Representing Distributional Responses
+
+For multivariate distributional responses, we represent each distribution as a `nonparanormal` object through the `as_nonparanormal()` function, which computes empirical quantiles and a latent correlation matrix for each distribution:
+
+```{r summaries}
+response_summaries <- as_nonparanormal(
+  distributional_responses,
+  M = 100L
+)
+response_summaries
+```
+
+
+---
+
+## 3. Fitting Fréchet Regression and Making Predictions
+
+### Predicting at Target Predictor Values ($Z$)
+
+To predict distributions at target predictor locations, supply a target predictor matrix $Z$ to `npt_frechetreg()`. For example, we evaluate predictions at five equally spaced points along the primary predictor $X_1 \in [-1, 1]$ while holding $X_2 = 0$:
+
+```{r predict-grid}
+target_grid <- cbind(
+  predictor_1 = seq(-1, 1, length.out = 5L),
+  predictor_2 = 0
+)
+rownames(target_grid) <- sprintf("X1 = %.1f, X2 = 0", target_grid[, "predictor_1"])
+
+predicted_model <- npt_frechetreg(
+  X,
+  response_summaries,
+  Z = target_grid
+)
+
+predicted_model
+```
+
+### In-Sample Model Fit
+
+Calling `npt_frechetreg()` with `Z = NULL` (the default) evaluates the regression model directly at the observed training points $X$:
+
+```{r fit-model}
+fitted_model <- npt_frechetreg(
+  X,
+  response_summaries
+)
+
+fitted_model
+```
+
+The in-sample fit retains point-for-point alignment with the observed distributional responses $(X_i, P_i)$. This in-sample model (`fitted_model`) is used for:
+- Diagnostic latent correlation visualization in Section 4 (`plot_npt_correlation()`), which compares the fitted trajectory against observed subject-level correlations.
+- Downstream goodness-of-fit calculations and inference in Sections 5 and 6 (`npt_component_r2()` and `npt_permutation_test()`).
+
+---
+
+## 4. Visualizing Distributional Predictions and Latent Correlations
+
+The package provides 2D visualization tools for fitted multivariate distributions and their underlying latent dependence for two specified response variables.
+
+### Fitted Bivariate Density Heatmaps
+
+`plot_npt_density()` reconstructs smooth fitted bivariate densities in the original measurement space for specified predictor values $z$ (from any `npt_frechetreg` object). For each target predictor profile:
+1. Samples from the fitted latent Gaussian distribution $\mathcal{N}_2(0, \hat{R}(z))$.
+2. Transforms latent samples through the fitted marginal quantiles $\hat{Q}^{(j)}(\cdot; z)$.
+3. Computes a smoothly regularized 2D kernel density estimate on a shared grid in the original measurement coordinates.
+
+Passing `predicted_model` visualizes the fitted joint distributions across target predictor locations:
+
+```{r plot-bivariate-density, fig.width = 11, fig.height = 3.4}
+density_plot <- plot_npt_density(
+  predicted_model,
+  variables = c("negative_gamma", "positive_gamma"),
+  seed = 20260820,
+  bandwidth_adjust = 1.5,
+  panel_columns = 5L
+)
+
+density_plot
+```
+
+The shared coordinate and density scales make the regression signal comparable across panels: as $X_1$ increases from $-1$ to $1$, the marginal distributions shift in opposite directions while their latent association transitions from negative to positive.
+
+### Predictor-Indexed Latent Correlation Fit
+
+Specify the same two variables in `plot_npt_correlation()` to obtain the corresponding regression display. The horizontal axis is the selected predictor: transparent points are the observed latent correlations estimated from the empirical distributions, and the solid curve is the fitted NPT correlation trajectory. With multiple predictors, the first predictor is used by default and the remaining predictors are held at their sample means along the fitted curve.
+
+```{r plot-fitted-correlations, fig.width = 5.5, fig.height = 5}
+correlation_plot <- plot_npt_correlation(
+  fitted_model,
+  variables = c("negative_gamma", "positive_gamma")
+)
+
+correlation_plot
+```
+
+Once the two variables are specified, both visualizations require no manual extraction of quantiles or correlation matrices.
+
+---
+
+## 5. Goodness-of-Fit via Component-Wise $R^2$
+
+To quantify the proportion of distributional variation explained by predictors $X$, `npt_component_r2()` computes generalized $R^2$ statistics separately for each marginal distribution and the latent correlation structure:
+
+$$
+R_{(j)}^2 = 1 - \frac{\sum_{i=1}^n d_W^2\big(P_i^{(j)}, \hat{P}^{(j)}(X_i)\big)}{\sum_{i=1}^n d_W^2\big(P_i^{(j)}, \hat{P}^{(j)}(\bar{X})\big)}, \qquad R_{\mathrm{corr}}^2 = 1 - \frac{\sum_{i=1}^n \mathcal{B}^2(R_i, \hat{R}(X_i))}{\sum_{i=1}^n \mathcal{B}^2(R_i, \hat{R}(\bar{X}))},
+$$
+
+where $\hat{P}^{(j)}(\bar{X})$ and $\hat{R}(\bar{X})$ correspond to the component-wise empirical Fréchet means: the Wasserstein mean of marginal quantiles and the Bures–Wasserstein mean of correlation matrices.
+
+```{r component-r2}
+r2_results <- npt_component_r2(
+  X,
+  response_summaries
+)
+
+r2_display <- r2_results
+r2_display[-1L] <- lapply(r2_display[-1L], round, digits = 3)
+r2_display
+```
+
+### Statistical Interpretation
+
+- **Marginal $R_{(j)}^2$ values**: Measure the proportion of shape, location, and scale variability in variable $j$ across subjects explained by predictors $X$.
+- **Correlation $R_{\mathrm{corr}}^2$**: Measures the proportion of inter-variable dependence changes across subjects explained by predictors $X$.
+
+This separate accounting avoids conflating marginal distributional shifts and correlation changes into a single scalar goodness-of-fit measure.
+
+---
+
+## 6. Statistical Inference via Permutation Testing
+
+To test the null hypotheses that predictors $X$ have no effect on the respective distributional components:
+
+$$
+H_0^{(j)}: Q^{(j)}(x) \equiv Q^{(j)} \quad (j = 1, \dots, d) \qquad \text{and} \qquad H_0^{(\mathrm{corr})}: R(x) \equiv R,
+$$
+
+`npt_permutation_test()` performs joint row permutations of $X$ and controls the Family-Wise Error Rate (FWER) across all $d + 1$ response components using the single-step **Westfall--Young min-$p$ procedure**:
+
+```{r permutation-test}
+test_results <- npt_permutation_test(
+  X,
+  response_summaries,
+  B = 99L,
+  workers = 1L,
+  seed = 20260820
+)
+
+test_display <- test_results$results
+test_display[-1L] <- lapply(test_display[-1L], round, digits = 3)
+test_display
+```
+
+---
+
+## Enforcing Physical Measurement Bounds (Optional)
+
+In applied domains, response variables often possess known physical or instrumental boundaries. For example, continuous glucose monitors (CGMs) record only within $40$--$400$ mg/dL, and concentrations, counts, or biological assays must often remain strictly non-negative ($[0, \infty)$).
+
+Because unconstrained linear Fréchet regression of marginal quantile functions can extrapolate outside valid physical limits under extreme predictor values, `NonparaTransport` supports physical support constraints across the complete regression and inference pipeline via the `bounds` argument.
+
+```{r bounded-workflow, eval = FALSE}
+# 1. Define physical measurement bounds per response variable
+cgm_bounds <- list(
+  glucose = c(40, 400),
+  activity = c(0, Inf)
+)
+
+# 2. Fit regression and predict at target points under support constraints
+bounded_fit <- npt_frechetreg(
+  X,
+  response_summaries,
+  Z = target_grid,
+  bounds = cgm_bounds
+)
+
+# 3. Evaluate component-wise R^2 respecting measurement boundaries
+bounded_r2 <- npt_component_r2(
+  X,
+  response_summaries,
+  bounds = cgm_bounds
+)
+
+# 4. Perform Westfall--Young permutation inference under bounded models
+bounded_test <- npt_permutation_test(
+  X,
+  response_summaries,
+  B = 999L,
+  bounds = cgm_bounds
+)
+```
+
+By default, `bounds = NULL` (unconstrained support $[-\infty, \infty]$), which is suitable when responses are unconstrained or remain comfortably within valid measurement domains.
+
+---
+
+## Summary Pipeline
+
+```r
+library(NonparaTransport)
+
+# 1. Prepare raw sample matrices Y_i and predictors X
+distributional_data <- list(subject_1 = Y1, subject_2 = Y2, ...)
+X <- matrix(covariates, ncol = p)
+
+# 2. Represent distributions as nonparanormal
+Y <- as_nonparanormal(distributional_data, standardize = FALSE)
+
+# 3. Fit Fréchet regression & predict at new locations Z
+fit <- npt_frechetreg(X, Y)
+prediction <- npt_frechetreg(X, Y, Z = Z_new)
+
+# 4. Visualize an in-sample fit for a selected variable pair
+density_plot <- plot_npt_density(fit, variables = c("var1", "var2"))
+correlation_plot <- plot_npt_correlation(fit, variables = c("var1", "var2"))
+
+# 5. Evaluate goodness-of-fit and statistical significance
+r2 <- npt_component_r2(X, Y)
+test <- npt_permutation_test(X, Y, B = 999L, workers = 2L)
+```

@@ -1,0 +1,155 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+pkgload::load_all(quiet = TRUE)
+```
+
+# NonparaTransport
+
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/IrinaStatsLab/NonparaTransport/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/IrinaStatsLab/NonparaTransport/actions/workflows/R-CMD-check.yaml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+<!-- badges: end -->
+
+`NonparaTransport` is an R package for efficiently analyzing **multivariate distributional data**. The **closed-form** nonparanormal transport (NPT) metric is fast to compute while closely approximating the geometric behavior of the 2-Wasserstein distance, facilitating large-scale metric-based analyses of multivariate distributional data.
+
+The corresponding methodological references are:
+
+1. Shao, E., Park, J., Punjabi, N., Jiang, H., and Gaynanova, I. (2026). [*Fast distance computation of multivariate distributions via nonparanormal transport*](https://arxiv.org/abs/2603.00322). arXiv:2603.00322.
+2. Park, J. and Gaynanova, I. (2026). [*Fréchet regression of multivariate distributions with nonparanormal transport*](https://arxiv.org/abs/2603.07014). arXiv:2603.07014.
+
+
+## Installation
+
+You can install `NonparaTransport` from GitHub:
+
+```r
+# install.packages("remotes")
+remotes::install_github("IrinaStatsLab/NonparaTransport")
+```
+
+### Requirements
+
+- **R** ($\ge 4.0.0$)
+- **C++20** compatible compiler (Rtools on Windows, GCC/Clang on Linux/macOS)
+- Dependent R packages: `Rcpp`, `RcppArmadillo`, `fastfrechet`, `parallel`, `ggplot2`
+
+
+
+## What is multivariate distributional data?
+
+In modern applications, each observational unit is frequently a **collection of multivariate samples**, forming a multivariate empirical distribution. Examples include:
+
+- **Wearable device data**: 24-hour joint physical activity, heart rate, and step acceleration streams ($N_i$ timestamps $\times d$ sensor channels) per subject.
+- **Single-cell and flow cytometry data**: Multi-protein or gene expression profiles across cells ($N_i$ cells $\times d$ markers) per subject.
+- **Neuroimaging data (fMRI)**: Continuous neural activity streams across brain regions ($N_i$ time frames $\times d$ regions of interest) per subject.
+
+
+## Why nonparanormal transport (NPT)?
+
+Despite its advantageous geometric properties, the standard multivariate 2-Wasserstein distance suffers from *high computational costs* and the *curse of dimensionality* -- sample estimates tend to be severely biased in moderate-to-high dimensions. This package instead uses *closed-form nonparanormal transport (NPT) metric* which addresses these limitations under the semiparametric nonparanormal (Gaussian copula) model. Specifically, we enable:
+
+1. **Fast distance computation.** Computes large pairwise distance matrices in seconds, significantly outpacing exact 2-Wasserstein as well as Sinkhorn and Sliced Wasserstein variants (Shao et al., 2026).
+2. **Close tracking of 2-Wasserstein geometry.** NPT closely tracks the behavior of the 2-Wasserstein distance, including bi-Lipschitz equivalence (Park and Gaynanova, 2026).
+3. **Mitigation of the curse of dimensionality.** Empirical NPT estimation achieves a univariate-equivalent sample convergence rate, avoiding the curse of dimensionality of 2-Wasserstein (Park and Gaynanova, 2026).
+
+
+### What you can do with NonparaTransport
+
+1. **Distance-based analyses of multivariate distributional data.** Compute NPT distances and full pairwise distance matrices for clustering, multidimensional scaling, and other metric-based analyses (Shao et al., 2026).
+2. **Fréchet regression of multivariate distributional responses.** Regress multivariate distributions on Euclidean predictors $X \in \mathbb{R}^p$, predict at new covariate values, and assess marginal and dependence components separately (Park and Gaynanova, 2026).
+
+---
+
+## Quick Start Guide
+
+The input data structure is a list of $n$ matrices $\mathcal{Y} = [Y_1, \dots, Y_n]$, where each $Y_i \in \mathbb{R}^{N_i \times d}$ contains $N_i$ samples from distribution $P_i$ on $\mathbb{R}^d$. The number $N_i$ of empirical observations can vary across $i=1, \ldots, n$.
+
+Given this multivariate distributional data, the main analysis pipeline is:
+1. Nonparanormal representation of each multivariate distribution using `as_nonparanormal()`.
+2. Distance computation between distributions and further analysis.
+
+### Basic Distance Computation Example
+
+We illustrate the NPT distance computation for two distributions in $d = 10$ dimensions with unequal sample sizes ($N_1 = 800, N_2 = 1200$):
+
+```{r quick-start-distance}
+library(NonparaTransport)
+
+set.seed(2026)
+d <- 10L
+n_obs <- c(800L, 1200L)
+
+# Simulate two 10-dimensional non-Gaussian distributions (N1 = 800, N2 = 1200)
+Sigma <- 0.6^abs(outer(1:d, 1:d, "-"))
+L <- chol(Sigma)
+
+generate_distribution <- function(N, shift = 0) {
+  Z <- matrix(rnorm(N * d), N, d) %*% L
+  U <- pnorm(Z)
+  X <- matrix(qgamma(U, shape = 3, rate = 2), N, d) + shift
+  colnames(X) <- paste0("V", 1:d)
+  X
+}
+
+distributions <- list(
+  P1 = generate_distribution(n_obs[1], shift = 0),
+  P2 = generate_distribution(n_obs[2], shift = 0.5)
+)
+
+# Measure total runtime: representation + distance computation
+timing <- system.time({
+  # 1. Fit nonparanormal representations (quantiles & latent correlations)
+  npn <- as_nonparanormal(distributions, M = 100L, standardize = TRUE)
+
+  # 2. Compute squared NPT distance
+  dist <- npt_distance(npn, first = "P1", second = "P2")
+})
+
+# Output squared distance
+dist
+
+cat(sprintf("Total runtime: %.4f seconds\n", timing[["elapsed"]]))
+```
+
+In just milliseconds, the total squared NPT distance is computed without solving expensive optimal transport linear programs.
+
+---
+
+## Documentation of further analyses
+
+For in-depth tutorials and mathematical formulations, explore the package vignettes:
+
+- **[Computing a pairwise NPT Distance Matrix](vignettes/npt-distance-matrix.Rmd)**: Detailed guide on computing pairwise distance matrices, and a downstream analysis example using Multidimensional Scaling (MDS).
+- **[Fréchet Regression of Multivariate Distributions](vignettes/npt-regression.Rmd)**: End-to-end regression case study covering marginal and dependence components separately, and inference.
+
+---
+
+## Function Summary
+
+| Function | Purpose | Input | Output |
+|:---|:---|:---|:---|
+| `as_nonparanormal()` | Fits nonparanormal models (optionally with pooled median/MAD preprocessing), estimating marginal quantiles and latent correlations | List of $n$ matrices $Y_i \in \mathbb{R}^{N_i \times d}$ | `nonparanormal` object |
+| `npt_distance()` | Computes one weighted squared NPT distance between two distributions | `nonparanormal`, two names or indices | Scalar or decomposed list |
+| `pairwise_npt_distance()` | Computes the weighted $n \times n$ squared NPT distance matrix and decomposition | `nonparanormal` | $n \times n$ matrix or decomposed list |
+| `npt_frechetreg()` | Fits multivariate Fréchet regression and predicts at new points $Z$ | Predictors $X$, `nonparanormal`, $Z$ | `npt_frechetreg` object |
+| `plot_npt_density()` | Reconstructs smooth 2D density heatmaps on shared coordinate grids | `npt_frechetreg` | Heatmap plot & grid data |
+| `npt_component_r2()` | Evaluates separate $R_j^2$ for each marginal and $R_{\mathrm{corr}}^2$ | Predictors $X$, `nonparanormal` | Data frame of component $R^2$ |
+| `npt_permutation_test()` | Westfall--Young min-$p$ permutation test for FWER control | Predictors $X$, `nonparanormal`, $B$ | Permutation test summary table |
+
+---
+
+## License
+
+This package is licensed under the [GPL-3 License](LICENSE).
+
