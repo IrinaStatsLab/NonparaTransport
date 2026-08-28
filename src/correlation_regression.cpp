@@ -13,12 +13,12 @@ namespace {
 // Latent Gaussian Correlation Regression & Component Losses (C++ Engine)
 //
 // Computes global Fréchet regression for latent Gaussian correlation matrices
-// R_{P_1}, ..., R_{P_n} under the Bures--Wasserstein (BW) metric, and evaluates
+// Sigma_1, ..., Sigma_n under the Bures--Wasserstein metric, and evaluates
 // component-wise sum of squared Fréchet losses for goodness-of-fit (R^2).
 //
 // Theoretical Formulation:
 //   Given training predictors X (n x p), prediction points Z (k x p), and
-//   training latent correlation matrices R_{P_1}, ..., R_{P_n} (d x d):
+//   training latent correlation matrices Sigma_1, ..., Sigma_n (d x d):
 //
 //   1. Global Fréchet Weights:
 //        w(z) = (1/n) 1 + (Z_c (X_c^T X_c)^+ X_c^T)^T
@@ -27,39 +27,42 @@ namespace {
 //   2. Correlation Barycenter / Regression:
 //      - For d = 2: Closed-form scalar solution for rho(z) in [-1, 1].
 //      - For d > 2: Projected Bures--Wasserstein Riemannian gradient descent:
-//          T_i(R) = R^{-1/2} (R^{1/2} R_{P_i} R^{1/2})^{1/2} R^{-1/2}
-//          G      = sum_{i=1}^n w_i(z) T_i(R)
-//          C      = G R G^T
-//          R_new  = diag(C)^{-1/2} C diag(C)^{-1/2}  (projected to correlation
+//          T_i(Sigma) = Sigma^{-1/2}
+//                       (Sigma^{1/2} Sigma_i Sigma^{1/2})^{1/2} Sigma^{-1/2}
+//          G         = sum_{i=1}^n w_i(z) T_i(Sigma)
+//          C         = G Sigma G^T
+//          Sigma_new = diag(C)^{-1/2} C diag(C)^{-1/2}  (projected to correlation
 //          cone)
 //
 //   3. Component Losses:
-//      - Marginal: sum_{i=1}^n ||Q_{P_i, j} - Qhat_{j}(z_i)||^2_{L^2}
-//      - Latent Correlation: sum_{i=1}^n BW^2(R_{P_i}, Rhat(z_i))
+//      - Marginal: sum_{i=1}^n ||Q_i^{(j)} - Qhat^{(j)}(z_i)||^2_{L^2}
+//      - Latent Correlation: sum_{i=1}^n \mathcal{B}^2(Sigma_i, Sigmahat(z_i))
 //
 //   1. Helper Linear Algebra / Manifold Operations:
-//      - symmetric_roots()        -> Simultaneous eigendecomposition of R^{1/2} & R^{-1/2}
+//      - symmetric_roots()        -> Simultaneous eigendecomposition of
+//                                    Sigma^{1/2} & Sigma^{-1/2}
 //      - symmetric_square_root()  -> Full symmetric PSD square root A^{1/2}
 //      - trace_symmetric_sqrt()   -> Direct scalar trace tr(A^{1/2}) = sum sqrt(lambda_j)
 //      - project_to_correlation() -> Normalizes covariance to unit diagonal
 //      - global_frechet_weights() -> Computes normalized Fréchet weights w(z)
 //      - bivariate_barycenter()   -> Exact scalar closed form for d = 2
 //      - integrated_squared_diff()-> Midpoint L^2 quantile loss
-//      - squared_bures_wasserst() -> BW^2 distance between correlation matrices
+//      - squared_bures_wasserst() -> \mathcal{B}^2 distance between correlation
+//                                    matrices
 //   2. Exported Entry Points:
-//      - correlation_regression_cpp()   -> Predicts Rhat(z) for all prediction
+//      - correlation_regression_cpp()   -> Predicts Sigmahat(z) for all prediction
 //      points
 //      - matched_component_losses_cpp() -> Computes in-sample / baseline loss
 //      sums
 // =============================================================================
 
-// Holds both R^{1/2} and R^{-1/2} computed from a single eigendecomposition
+// Holds both Sigma^{1/2} and Sigma^{-1/2} computed from a single eigendecomposition
 struct SymmetricRoots {
   arma::mat square_root;
   arma::mat inverse_square_root;
 };
 
-// Computes R^{1/2} and R^{-1/2} with eigenvalue thresholding for numerical
+// Computes Sigma^{1/2} and Sigma^{-1/2} with eigenvalue thresholding for numerical
 // stability
 SymmetricRoots symmetric_roots(const arma::mat &matrix, double eigen_floor) {
   arma::vec eigenvalues;
@@ -227,7 +230,8 @@ double squared_bures_wasserstein(const arma::mat &first,
     return std::max(0.0, value);
   }
 
-  // General d > 2: tr(R_1) + tr(R_2) - 2 tr((R_1^{1/2} R_2 R_1^{1/2})^{1/2})
+  // General d > 2: tr(Sigma_1) + tr(Sigma_2) -
+  // 2 tr((Sigma_1^{1/2} Sigma_2 Sigma_1^{1/2})^{1/2})
   const arma::mat first_sqrt = symmetric_square_root(first, eigen_floor);
   const double middle_sqrt_trace =
       trace_symmetric_sqrt(first_sqrt * second * first_sqrt, eigen_floor);
@@ -307,7 +311,8 @@ Rcpp::List correlation_regression_cpp(Rcpp::List correlations,
           symmetric_roots(current, eigen_floor);
       arma::mat middle_average(d, d, arma::fill::zeros);
 
-      // For U = R^{-1/2} and H_i = (R^{1/2} R_i R^{1/2})^{1/2}, U is common,
+      // For U = Sigma^{-1/2} and
+      // H_i = (Sigma^{1/2} Sigma_i Sigma^{1/2})^{1/2}, U is common,
       // so sum_i w_i U H_i U = U (sum_i w_i H_i) U. This cuts 2n matrix
       // products to 2 per iteration; each nonlinear H_i stays inside the loop.
       for (int i = 0; i < n; ++i) {

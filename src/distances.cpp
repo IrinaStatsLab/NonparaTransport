@@ -13,16 +13,16 @@ namespace {
 // Computes the pairwise squared NPT distance matrix between n distributions
 // P_1, ..., P_n using precomputed summaries:
 //
-//   NPT^2(P_i, P_k) = sum_{j=1}^d ||Q_{P_i, j} - Q_{P_k, j}||^2_{L^2} +
-//   BW^2(R_{P_i}, R_{P_k})
+//   d_{NPT}^2(P_i, P_k) = sum_{j=1}^d ||Q_i^{(j)} - Q_k^{(j)}||^2_{L^2} +
+//   \mathcal{B}^2(Sigma_i, Sigma_k)
 //
 // Components:
 //   1. Marginal L^2 distance:
-//        sum_{j=1}^d ||Q_{P_i, j} - Q_{P_k, j}||^2_{L^2}
+//        sum_{j=1}^d ||Q_i^{(j)} - Q_k^{(j)}||^2_{L^2}
 //      evaluated via midpoint numerical integration over M grid points.
 //   2. Correlation distance (Bures-Wasserstein):
-//        BW^2(R_{P_i}, R_{P_k}) = tr(R_{P_i}) + tr(R_{P_k}) - 2 tr{
-//        (R_{P_i}^{1/2} R_{P_k} R_{P_i}^{1/2})^{1/2} }
+//        \mathcal{B}^2(Sigma_i, Sigma_k) = tr(Sigma_i) + tr(Sigma_k) - 2 tr{
+//        (Sigma_i^{1/2} Sigma_k Sigma_i^{1/2})^{1/2} }
 //      For d = 2, simplified to an exact closed-form scalar expression.
 //
 // Reading Guide (Execution Flow):
@@ -33,11 +33,11 @@ namespace {
 //     variables.
 //     2. Dependence loop:
 //        - If d = 2: calls squared_bivariate_bures() for scalar fast evaluation.
-//        - If d > 2: calls squared_bures_wasserstein() using cached R^{1/2} roots
+//        - If d > 2: calls squared_bures_wasserstein() using cached Sigma^{1/2} roots
 //          and trace_symmetric_sqrt() for eigenvalue-only trace evaluation.
 // =============================================================================
 
-// Principal symmetric square root used when summaries do not cache R^{1/2}
+// Principal symmetric square root used when summaries do not cache Sigma^{1/2}
 arma::mat symmetric_sqrt(const arma::mat &matrix) {
   arma::mat result;
   const arma::mat symmetric = 0.5 * (matrix + matrix.t());
@@ -47,7 +47,7 @@ arma::mat symmetric_sqrt(const arma::mat &matrix) {
   return 0.5 * (result + result.t());
 }
 
-// For the BW middle matrix A, tr(A^{1/2}) = sum_j sqrt(lambda_j(A)); this
+// For the Bures--Wasserstein middle matrix A, tr(A^{1/2}) = sum_j sqrt(lambda_j(A)); this
 // scalar term needs eigenvalues, not the reconstructed square-root matrix.
 double trace_symmetric_sqrt(const arma::mat &matrix) {
   arma::vec eigenvalues;
@@ -61,9 +61,9 @@ double trace_symmetric_sqrt(const arma::mat &matrix) {
 
 // Squared Bures-Wasserstein distance between two d x d latent correlation
 // matrices:
-//   BW^2(R_P, R_Q) = tr(R_P) + tr(R_Q) - 2 * tr{ (R_P^{1/2} R_Q
-//   R_P^{1/2})^{1/2} }
-// `first_sqrt` (R_P^{1/2}) is precomputed to avoid redundant O(d^3) roots.
+//   \mathcal{B}^2(Sigma_P, Sigma_Q) = tr(Sigma_P) + tr(Sigma_Q) - 2 * tr{
+//   (Sigma_P^{1/2} Sigma_Q Sigma_P^{1/2})^{1/2} }
+// `first_sqrt` (Sigma_P^{1/2}) is precomputed to avoid redundant O(d^3) roots.
 double squared_bures_wasserstein(const arma::mat &first,
                                  const arma::mat &second,
                                  const arma::mat &first_sqrt) {
@@ -115,7 +115,7 @@ Rcpp::List pairwise_summary_distance_cpp(Rcpp::List quantiles,
     correlation_matrices[i] = Rcpp::as<arma::mat>(correlations[i]);
   }
 
-  // For d > 2, prepare one matrix square root R^{1/2} per distribution.
+  // For d > 2, prepare one matrix square root Sigma^{1/2} per distribution.
   // Use cached roots if available, or compute them on demand.
   std::vector<arma::mat> square_roots;
   if (d > 2) {
@@ -138,8 +138,7 @@ Rcpp::List pairwise_summary_distance_cpp(Rcpp::List quantiles,
     arma::mat &current = quantile_matrices[variable];
 
     // Subtract the same probability-wise mean curve from every distribution.
-    // Pairwise differences are unchanged, while smaller values avoid cancellation
-    // when squared norms and cross-products are combined below.
+    // Pairwise differences are unchanged while controlling numerical stability.
     const arma::rowvec probability_means = arma::mean(current, 0);
     current.each_row() -= probability_means;
 
@@ -163,7 +162,7 @@ Rcpp::List pairwise_summary_distance_cpp(Rcpp::List quantiles,
   // 2. Correlation component: Bures-Wasserstein distance between latent
   // correlation matrices.
   // - d = 2: exact closed-form scalar formula
-  // - d > 2: general matrix Bures-Wasserstein formula using cached R^{1/2}
+  // - d > 2: general matrix Bures-Wasserstein formula using cached Sigma^{1/2}
   if (d == 2) {
     for (int i = 0; i < n; ++i) {
       const double rho_i = correlation_matrices[i](0, 1);

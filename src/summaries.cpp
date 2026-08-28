@@ -18,7 +18,7 @@ namespace {
 //   1. d marginal quantile functions evaluated on an M-point grid.
 //   2. A d x d latent Gaussian copula correlation matrix (via Kendall's tau-a,
 //      the sine bridge, and projection to the correlation cone).
-//   3. (Optional) Matrix square roots R^{1/2} for fast distance calculations.
+//   3. (Optional) Matrix square roots Sigma^{1/2} for fast distance calculations.
 //
 // Key optimization:
 //   Each column is sorted once in O(N_i log N_i). The sorted values and
@@ -35,7 +35,7 @@ namespace {
 //     3. correlation_from_sorted()-> Pairwise Kendall's tau-a and sine bridge
 //        `- merge_and_count()     -> O(N_i log N_i) discordant pair counting
 //     4. nearest_correlation()    -> Dykstra PSD projection + pd_shrinkage
-//     5. symmetric_sqrt()         -> Optional R^{1/2} caching
+//     5. symmetric_sqrt()         -> Optional Sigma^{1/2} caching
 // =============================================================================
 
 // 64-bit integer for pair counts (N_i*(N_i-1)/2 grows quadratically)
@@ -300,7 +300,7 @@ arma::mat correlation_from_sorted(const arma::mat &data,
   return nearest_correlation(correlation, shrinkage);
 }
 
-// Symmetric matrix square root R^{1/2} using Armadillo's sqrtmat_sympd
+// Symmetric matrix square root Sigma^{1/2} using Armadillo's sqrtmat_sympd
 arma::mat symmetric_sqrt(const arma::mat &matrix) {
   arma::mat result;
   const arma::mat symmetric = 0.5 * (matrix + matrix.t());
@@ -381,7 +381,7 @@ Rcpp::List distribution_summaries_cpp(Rcpp::List data, int M,
         correlation_from_sorted(current, columns, pd_shrinkage);
     correlations[distribution_index] = correlation;
 
-    // 3. (Optional) Precompute symmetric square root R^{1/2} for downstream
+    // 3. (Optional) Precompute symmetric square root Sigma^{1/2} for downstream
     // distance calculations
     if (cache_sqrt) {
       correlation_sqrts[distribution_index] = symmetric_sqrt(correlation);

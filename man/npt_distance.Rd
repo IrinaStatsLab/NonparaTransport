@@ -16,14 +16,14 @@ the two distributions in \code{summaries}.}
 \code{marginal}, \code{correlation}, and \code{total} distance matrices. If \code{FALSE} (default),
 returns only the \code{total} squared-distance matrix.}
 
-\item{bw_weight}{Positive finite scalar \eqn{c} multiplying the squared
+\item{bw_weight}{Positive finite scalar multiplying the squared
 Bures--Wasserstein correlation term (default is \code{1}). Changing this weight
 does not alter the marginal term.}
 }
 \value{
 A numeric scalar containing the total squared NPT distance. If
 \code{decompose = TRUE}, returns a list with scalar components \code{marginal},
-\code{correlation} (the weighted term \eqn{c\,\mathrm{BW}^2}), and \code{total}.
+\code{correlation} (the weighted Bures--Wasserstein term), and \code{total}.
 }
 \description{
 Computes one squared NPT distance between two distributions selected from a

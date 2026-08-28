@@ -61,22 +61,19 @@ named center and scale vectors.}
 Estimates marginal empirical quantiles and latent Gaussian correlation
 matrices from a collection of multivariate empirical distributions.
 These nonparanormal representations serve as the core input for computing
-nonparanormal transport distances and fitting Fréchet regressions.
+nonparanormal transport metrics and fitting Fréchet regressions.
 }
 \details{
-Under the nonparanormal transport model, the Wasserstein distance between
-two continuous multivariate distributions decomposes into:
+Under the nonparanormal model, the nonparanormal transport (NPT) metric between
+two continuous multivariate distributions requires:
 \enumerate{
 \item \strong{Marginal quantile functions}: Empirical quantiles evaluated
 at the midpoints \eqn{p_k=(k-1/2)/M}, \eqn{k=1,\ldots,M}, of \eqn{M}
 equal-width probability intervals.
-The grid excludes zero and one.
 \item \strong{Latent correlation matrices}: Dependence structures estimated
 via Kendall's \eqn{\tau_a} and transformed through the sine bridge
-\eqn{\rho = \sin(\pi \tau_a / 2)}. The raw matrix is projected to the
-nearest positive semidefinite correlation matrix and shrunk toward the
-identity by \code{pd_shrinkage} to ensure strict positive definiteness.
-This follows the default computation of the R package \code{latentcor}.
+\eqn{\rho = \sin(\pi \tau_a / 2)}. The computation follows the default
+computation of the R package \code{latentcor}.
 }
 
 Precomputing these representations once for each of the \eqn{n} distributions avoids

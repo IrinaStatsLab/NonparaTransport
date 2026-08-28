@@ -32,24 +32,24 @@ This vignette walks through the complete workflow:
 
 A continuous random vector $Y = (Y^{(1)}, \dots, Y^{(d)})^\top \sim P$ on $\mathbb{R}^d$ follows a **nonparanormal distribution** (Liu et al., 2009) if there exist strictly increasing marginal transformations $f = (f^{(1)}, \dots, f^{(d)})^\top$ such that
 $$
-f(Y) = \big(f^{(1)}(Y^{(1)}), \dots, f^{(d)}(Y^{(d)})\big)^\top \sim \mathcal{N}_d(0, R),
+f(Y) = \big(f^{(1)}(Y^{(1)}), \dots, f^{(d)}(Y^{(d)})\big)^\top \sim \mathcal{N}_d(0, \Sigma),
 $$
-where $R \in \mathbb{R}^{d \times d}$ is a latent Gaussian correlation matrix with $\operatorname{diag}(R) = I_d$.
+where $\Sigma \in \mathbb{R}^{d \times d}$ is a latent Gaussian correlation matrix with $\operatorname{diag}(\Sigma) = I_d$.
 
-Let $F^{(j)}$ and $Q^{(j)} = (F^{(j)})^{-1}$ denote the marginal CDF and quantile function of coordinate $Y^{(j)}$. With $f^{(j)} = \Phi^{-1} \circ F^{(j)}$, $Y$ is equivalently generated from a latent Gaussian vector $Z \sim \mathcal{N}_d(0, R)$ via $Y^{(j)} = Q^{(j)}(\Phi(Z^{(j)}))$ for $j = 1, \dots, d$. Thus, $P$ is completely characterized by its $d$ marginal distributions $P^{(j)}$ (or quantiles $Q^{(j)}$) and latent correlation matrix $R$.
+Let $F^{(j)}$ and $Q^{(j)} = (F^{(j)})^{-1}$ denote the marginal CDF and quantile function of coordinate $Y^{(j)}$. With $f^{(j)} = \Phi^{-1} \circ F^{(j)}$, $Y$ is equivalently generated from a latent Gaussian vector $Z \sim \mathcal{N}_d(0, \Sigma)$ via $Y^{(j)} = Q^{(j)}(\Phi(Z^{(j)}))$ for $j = 1, \dots, d$. Thus, $P$ is completely characterized by its $d$ marginal distributions $P^{(j)}$ (or quantiles $Q^{(j)}$) and latent correlation matrix $\Sigma$.
 
 ### Nonparanormal Transport (NPT) Metric
 
 For any two nonparanormal distributions $P_i$ and $P_k$ on $\mathbb{R}^d$, the squared NPT distance is defined as:
 
 $$
-d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + d_W^2\big(\mathcal{N}_d(0, R_i), \mathcal{N}_d(0, R_k)\big),
+d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + d_W^2\big(\mathcal{N}_d(0, \Sigma_i), \mathcal{N}_d(0, \Sigma_k)\big),
 $$
 
 where $d_W$ is the 2-Wasserstein distance. Both components have closed-form expressions:
 
 - **Marginal Wasserstein distances**: $d_W^2(P_i^{(j)}, P_k^{(j)}) = \|Q_i^{(j)} - Q_k^{(j)}\|_{L^2}^2 = \int_0^1 \big(Q_i^{(j)}(p) - Q_k^{(j)}(p)\big)^2 \, dp$.
-- **Latent Gaussian Wasserstein distance**: $d_W^2(\mathcal{N}_d(0, R_i), \mathcal{N}_d(0, R_k)) = \mathcal{B}^2(R_i, R_k) = 2d - 2 \operatorname{tr}\big((R_i^{1/2} R_k R_i^{1/2})^{1/2}\big)$ (the Bures--Wasserstein metric).
+- **Latent Gaussian Wasserstein distance**: $d_W^2(\mathcal{N}_d(0, \Sigma_i), \mathcal{N}_d(0, \Sigma_k)) = \mathcal{B}^2(\Sigma_i, \Sigma_k) = 2d - 2 \operatorname{tr}\big((\Sigma_i^{1/2} \Sigma_k \Sigma_i^{1/2})^{1/2}\big)$ (the Bures--Wasserstein metric).
 
 This closed-form formulation enables very fast computation (illustrated below) while closely capturing the geometric behavior of the 2-Wasserstein distance (Park and Gaynanova, 2026).
 
@@ -143,7 +143,7 @@ Instead, `as_nonparanormal()` extracts all necessary mathematical quantities in 
 
 - **Marginal Quantile Functions ($Q_i^{(j)}$)**: Empirical quantiles evaluated at $M$ equal-width midpoint probabilities $p_k = (k - 0.5)/M \in (0, 1)$.
   - $M = 100$ grid points are often enough for univariate Wasserstein distance evaluations.
-- **Latent Correlation Matrices ($R_i$)**: Estimated via Kendall's $\tau_a$ sine bridge $\rho = \sin(\pi \tau_a / 2)$ with positive-definite projection.
+- **Latent Correlation Matrices ($\Sigma_i$)**: Estimated via Kendall's $\tau_a$ sine bridge $\rho = \sin(\pi \tau_a / 2)$ with positive-definite projection.
 
 ```{r summaries}
 precomputed_summaries <- as_nonparanormal(
@@ -192,7 +192,7 @@ cat(sprintf("Evaluated %s pairwise distances in %.2f seconds.\n",
 
 Setting `decompose = TRUE` decomposes the total squared distance into its marginal and correlation components:
 
-$$d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + \mathcal{B}^2(R_i, R_k)$$
+$$d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + \mathcal{B}^2(\Sigma_i, \Sigma_k)$$
 
 ```{r decomposition}
 parts <- pairwise_npt_distance(
@@ -220,10 +220,10 @@ cat(sprintf("  Total d_NPT^2 distance:  %.3f\n", parts$total[idx_baseline, idx_c
 
 - **Baseline vs. Mean Shift**: 
   - Marginal component dominates ($\sum_{j=1}^d d_W^2(P_i^{(j)}, P_k^{(j)}) \approx 39.16$), capturing the substantial location shift across the $d = 10$ variables.
-  - Correlation component is near zero ($\mathcal{B}^2(R_i, R_k) \approx 0.05$), correctly identifying that both distributions share strong autoregressive coupling ($\rho \approx 0.6\text{--}0.7$).
+  - Correlation component is near zero ($\mathcal{B}^2(\Sigma_i, \Sigma_k) \approx 0.05$), correctly identifying that both distributions share strong autoregressive coupling ($\rho \approx 0.6\text{--}0.7$).
 - **Baseline vs. Correlation Shift**: 
   - Marginal component is small ($\sum_{j=1}^d d_W^2(P_i^{(j)}, P_k^{(j)}) \approx 0.42$), reflecting shared baseline marginal distributions up to minor random noise.
-  - Correlation component is larger ($\mathcal{B}^2(R_i, R_k) \approx 1.85$), capturing the marked reduction in latent correlation ($\rho \approx 0.65$ vs $\rho \approx 0.05$).
+  - Correlation component is larger ($\mathcal{B}^2(\Sigma_i, \Sigma_k) \approx 1.85$), capturing the marked reduction in latent correlation ($\rho \approx 0.65$ vs $\rho \approx 0.05$).
 
 This exact decomposition provides immediate physical interpretability that standard multivariate Wasserstein distances cannot easily offer.
 
@@ -274,9 +274,9 @@ The resulting 2D embedding clearly separates the 1,000 distributions into distin
 
 ### Marginal Scale Standardization
 
-The marginal 2-Wasserstein terms $d_W^2(P_i^{(j)}, P_k^{(j)})$ retain the physical units and measurement scales of each variable $j$, whereas the latent correlation term $\mathcal{B}^2(R_i, R_k)$ is dimensionless and bounded:
+The marginal 2-Wasserstein terms $d_W^2(P_i^{(j)}, P_k^{(j)})$ retain the physical units and measurement scales of each variable $j$, whereas the latent correlation term $\mathcal{B}^2(\Sigma_i, \Sigma_k)$ is dimensionless and bounded:
 $$
-0 \le \mathcal{B}^2(R_i, R_k) \le 2d - 2\sqrt{d}.
+0 \le \mathcal{B}^2(\Sigma_i, \Sigma_k) \le 2d - 2\sqrt{d}.
 $$
 If raw variables have widely differing units (e.g., heart rate in bpm vs. body temperature in degrees Celsius), unstandardized marginal differences in large-scale variables could overwhelm both smaller-scale variables and the latent correlation term.
 
@@ -287,7 +287,7 @@ For this reason, `as_nonparanormal(..., standardize = TRUE)` applies pooled medi
 To optionally adjust the relative contribution of latent dependence differences versus marginal quantile differences, the **weighted squared NPT distance** is defined as:
 
 $$
-d_{\mathrm{NPT}, c}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + c\,\mathcal{B}^2(R_i, R_k), \qquad c > 0.
+d_{\mathrm{NPT}, c}^2(P_i, P_k) = \sum_{j=1}^d d_W^2\big(P_i^{(j)}, P_k^{(j)}\big) + c\,\mathcal{B}^2(\Sigma_i, \Sigma_k), \qquad c > 0.
 $$
 
 The parameter $c$ corresponds to the `bw_weight` argument in `pairwise_npt_distance()` (defaulting to `bw_weight = 1`). Tuning $c$ scales only the latent Gaussian correlation term without altering or recomputing the marginal quantiles:
@@ -305,4 +305,4 @@ names(weighted_totals) <- paste0("c_", bw_weights)
 round(vapply(weighted_totals, function(distance) distance[idx_baseline, idx_correlation_shift], numeric(1)), 3)
 ```
 
-The preprocessing and marginal term $\sum_{j=1}^d d_W^2(P_i^{(j)}, P_k^{(j)})$ remain fixed across these calculations; only the weighted correlation term $c\,\mathcal{B}^2(R_i, R_k)$ changes.
+The preprocessing and marginal term $\sum_{j=1}^d d_W^2(P_i^{(j)}, P_k^{(j)})$ remain fixed across these calculations; only the weighted correlation term $c\,\mathcal{B}^2(\Sigma_i, \Sigma_k)$ changes.

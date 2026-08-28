@@ -47,11 +47,11 @@ This vignette demonstrates the complete regression workflow:
 
 A continuous random vector $Y = (Y^{(1)}, \dots, Y^{(d)})^\top \sim P$ on $\mathbb{R}^d$ follows a **nonparanormal distribution** (Liu et al., 2009) if there exist strictly increasing marginal transformations $f = (f^{(1)}, \dots, f^{(d)})^\top$ such that:
 $$
-f(Y) = \big(f^{(1)}(Y^{(1)}), \dots, f^{(d)}(Y^{(d)})\big)^\top \sim \mathcal{N}_d(0, R),
+f(Y) = \big(f^{(1)}(Y^{(1)}), \dots, f^{(d)}(Y^{(d)})\big)^\top \sim \mathcal{N}_d(0, \Sigma),
 $$
-where $R \in \mathbb{R}^{d \times d}$ is a latent Gaussian correlation matrix with $\operatorname{diag}(R) = I_d$.
+where $\Sigma \in \mathbb{R}^{d \times d}$ is a latent Gaussian correlation matrix with $\operatorname{diag}(\Sigma) = I_d$.
 
-Let $F^{(j)}$ and $Q^{(j)} = (F^{(j)})^{-1}$ denote the marginal CDF and quantile function of coordinate $Y^{(j)}$. With $f^{(j)} = \Phi^{-1} \circ F^{(j)}$, $Y$ is equivalently generated from a latent Gaussian vector $Z \sim \mathcal{N}_d(0, R)$ via $Y^{(j)} = Q^{(j)}(\Phi(Z^{(j)}))$ for $j = 1, \dots, d$. Thus, $P$ is completely characterized by its $d$ marginal distributions $P^{(j)}$ (or quantiles $Q^{(j)}$) and latent correlation matrix $R$.
+Let $F^{(j)}$ and $Q^{(j)} = (F^{(j)})^{-1}$ denote the marginal CDF and quantile function of coordinate $Y^{(j)}$. With $f^{(j)} = \Phi^{-1} \circ F^{(j)}$, $Y$ is equivalently generated from a latent Gaussian vector $Z \sim \mathcal{N}_d(0, \Sigma)$ via $Y^{(j)} = Q^{(j)}(\Phi(Z^{(j)}))$ for $j = 1, \dots, d$. Thus, $P$ is completely characterized by its $d$ marginal distributions $P^{(j)}$ (or quantiles $Q^{(j)}$) and latent correlation matrix $\Sigma$.
 
 ### Fréchet Regression under Nonparanormal Transport
 
@@ -64,9 +64,9 @@ where $s_i(x)$ are Fréchet regression weights (such as local linear or global l
 
 Because the squared NPT distance decomposes additively:
 $$
-d_{\mathrm{NPT}}^2(P, P_i) = \sum_{j=1}^d d_W^2\big(P^{(j)}, P_i^{(j)}\big) + \mathcal{B}^2(R, R_i),
+d_{\mathrm{NPT}}^2(P, P_i) = \sum_{j=1}^d d_W^2\big(P^{(j)}, P_i^{(j)}\big) + \mathcal{B}^2(\Sigma, \Sigma_i),
 $$
-where $\mathcal{B}^2(R, R_i) = d_W^2(\mathcal{N}_d(0, R), \mathcal{N}_d(0, R_i))$ is the Bures--Wasserstein metric on latent correlation matrices, the global multivariate optimization decouples exactly into $d + 1$ independent subproblems:
+where $\mathcal{B}^2(\Sigma, \Sigma_i) = d_W^2(\mathcal{N}_d(0, \Sigma), \mathcal{N}_d(0, \Sigma_i))$ is the Bures--Wasserstein metric on latent correlation matrices, the global multivariate optimization decouples exactly into $d + 1$ independent subproblems:
 
 1. **$d$ Marginal 2-Wasserstein Quantile Regressions**: For each variable $j = 1, \dots, d$, we use the equality $d_W^2\big(P^{(j)}, P_i^{(j)}\big) = \|Q^{(j)} - Q_i^{(j)}\|^2_{L^2}$ to compute the regression at the quantile level:
    $$
@@ -75,11 +75,11 @@ where $\mathcal{B}^2(R, R_i) = d_W^2(\mathcal{N}_d(0, R), \mathcal{N}_d(0, R_i))
    where $\mathcal{K} \subset L^2(0, 1)$ is the closed convex cone of non-decreasing quantile functions, solved using the package `fastfrechet` (Coulter et al., 2025).
 2. **One Latent Correlation Regression**:
    $$
-   \hat{R}(x) = \arg\min_{R \in \mathcal{E}_d} \sum_{i=1}^n s_i(x)\, \mathcal{B}^2(R, R_i),
+   \hat{\Sigma}(x) = \arg\min_{\Sigma \in \mathcal{E}_d} \sum_{i=1}^n s_i(x)\, \mathcal{B}^2(\Sigma, \Sigma_i),
    $$
-   where $\mathcal{E}_d = \{R \in \mathcal{S}_+^{d \times d} : \operatorname{diag}(R) = I_d\}$ is the set of $d \times d$ correlation matrices, estimated via projected Riemannian gradient descent with respect to the Bures--Wasserstein metric $\mathcal{B}$ (Park and Gaynanova, 2026).
+   where $\mathcal{E}_d = \{\Sigma \in \mathcal{S}_+^{d \times d} : \operatorname{diag}(\Sigma) = I_d\}$ is the set of $d \times d$ correlation matrices, estimated via projected Riemannian gradient descent with respect to the Bures--Wasserstein metric $\mathcal{B}$ (Park and Gaynanova, 2026).
 
-Once these regression problems are solved, the final nonparanormal regression output $\hat P(x)$ is reconstructed from the marginals $\hat Q^{(j)}(x)$ and the latent correlation matrix $\hat R(x)$. 
+Once these regression problems are solved, the final nonparanormal regression output $\hat P(x)$ is reconstructed from the marginals $\hat Q^{(j)}(x)$ and the latent correlation matrix $\hat\Sigma(x)$.
 
 ---
 
@@ -251,7 +251,7 @@ The package provides 2D visualization tools for fitted multivariate distribution
 ### Fitted Bivariate Density Heatmaps
 
 `plot_npt_density()` reconstructs smooth fitted bivariate densities in the original measurement space for specified predictor values $z$ (from any `npt_frechetreg` object). For each target predictor profile:
-1. Samples from the fitted latent Gaussian distribution $\mathcal{N}_2(0, \hat{R}(z))$.
+1. Samples from the fitted latent Gaussian distribution $\mathcal{N}_2(0, \hat{\Sigma}(z))$.
 2. Transforms latent samples through the fitted marginal quantiles $\hat{Q}^{(j)}(\cdot; z)$.
 3. Computes a smoothly regularized 2D kernel density estimate on a shared grid in the original measurement coordinates.
 
@@ -293,10 +293,10 @@ Once the two variables are specified, both visualizations require no manual extr
 To quantify the proportion of distributional variation explained by predictors $X$, `npt_component_r2()` computes generalized $R^2$ statistics separately for each marginal distribution and the latent correlation structure:
 
 $$
-R_{(j)}^2 = 1 - \frac{\sum_{i=1}^n d_W^2\big(P_i^{(j)}, \hat{P}^{(j)}(X_i)\big)}{\sum_{i=1}^n d_W^2\big(P_i^{(j)}, \hat{P}^{(j)}(\bar{X})\big)}, \qquad R_{\mathrm{corr}}^2 = 1 - \frac{\sum_{i=1}^n \mathcal{B}^2(R_i, \hat{R}(X_i))}{\sum_{i=1}^n \mathcal{B}^2(R_i, \hat{R}(\bar{X}))},
+R_j^2 = 1 - \frac{\sum_{i=1}^n d_W^2\big(P_i^{(j)}, \hat{P}^{(j)}(X_i)\big)}{\sum_{i=1}^n d_W^2\big(P_i^{(j)}, \hat{P}^{(j)}(\bar{X})\big)}, \qquad R_{\mathrm{corr}}^2 = 1 - \frac{\sum_{i=1}^n \mathcal{B}^2(\Sigma_i, \hat{\Sigma}(X_i))}{\sum_{i=1}^n \mathcal{B}^2(\Sigma_i, \hat{\Sigma}(\bar{X}))},
 $$
 
-where $\hat{P}^{(j)}(\bar{X})$ and $\hat{R}(\bar{X})$ correspond to the component-wise empirical Fréchet means: the Wasserstein mean of marginal quantiles and the Bures–Wasserstein mean of correlation matrices.
+where $\hat{P}^{(j)}(\bar{X})$ and $\hat{\Sigma}(\bar{X})$ correspond to the component-wise empirical Fréchet means: the Wasserstein mean of marginal quantiles and the Bures–Wasserstein mean of correlation matrices.
 
 ```{r component-r2}
 r2_results <- npt_component_r2(
@@ -311,7 +311,7 @@ r2_display
 
 ### Statistical Interpretation
 
-- **Marginal $R_{(j)}^2$ values**: Measure the proportion of shape, location, and scale variability in variable $j$ across subjects explained by predictors $X$.
+- **Marginal $R_j^2$ values**: Measure the proportion of shape, location, and scale variability in variable $j$ across subjects explained by predictors $X$.
 - **Correlation $R_{\mathrm{corr}}^2$**: Measures the proportion of inter-variable dependence changes across subjects explained by predictors $X$.
 
 This separate accounting avoids conflating marginal distributional shifts and correlation changes into a single scalar goodness-of-fit measure.
@@ -323,7 +323,7 @@ This separate accounting avoids conflating marginal distributional shifts and co
 To test the null hypotheses that predictors $X$ have no effect on the respective distributional components:
 
 $$
-H_0^{(j)}: Q^{(j)}(x) \equiv Q^{(j)} \quad (j = 1, \dots, d) \qquad \text{and} \qquad H_0^{(\mathrm{corr})}: R(x) \equiv R,
+H_0^{(j)}: Q^{(j)}(x) \equiv Q^{(j)} \quad (j = 1, \dots, d) \qquad \text{and} \qquad H_0^{(\mathrm{corr})}: \Sigma(x) \equiv \Sigma,
 $$
 
 `npt_permutation_test()` performs joint row permutations of $X$ and controls the Family-Wise Error Rate (FWER) across all $d + 1$ response components using the single-step **Westfall--Young min-$p$ procedure**:

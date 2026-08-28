@@ -2,7 +2,7 @@
 % Please edit documentation in R/distance.R
 \name{pairwise_npt_distance}
 \alias{pairwise_npt_distance}
-\title{Pairwise Squared Nonparanormal Transport Distances}
+\title{Pairwise Squared Nonparanormal Transport Metrics}
 \usage{
 pairwise_npt_distance(summaries, decompose = FALSE, bw_weight = 1)
 }
@@ -13,7 +13,7 @@ pairwise_npt_distance(summaries, decompose = FALSE, bw_weight = 1)
 \code{marginal}, \code{correlation}, and \code{total} distance matrices. If \code{FALSE} (default),
 returns only the \code{total} squared-distance matrix.}
 
-\item{bw_weight}{Positive finite scalar \eqn{c} multiplying the squared
+\item{bw_weight}{Positive finite scalar multiplying the squared
 Bures--Wasserstein correlation term (default is \code{1}). Changing this weight
 does not alter the marginal term.}
 }
@@ -23,31 +23,31 @@ distances, where \eqn{n} is the number of distributions, or a list containing:
 \describe{
 \item{\code{marginal}}{\eqn{n \times n} matrix of squared marginal quantile distances.}
 \item{\code{correlation}}{\eqn{n \times n} matrix of weighted squared
-Bures--Wasserstein correlation distances \eqn{c\,\mathrm{BW}^2}.}
+Bures--Wasserstein correlation distances.}
 \item{\code{total}}{\eqn{n \times n} matrix of total squared NPT distances
 (\code{marginal + correlation}).}
 }
 }
 \description{
-Computes the matrix of pairwise squared nonparanormal transport (NPT) distances
+Computes the matrix of pairwise squared nonparanormal transport (NPT) metrics
 across distributions using precomputed representations from \code{\link[=as_nonparanormal]{as_nonparanormal()}}.
 }
 \details{
-Under the nonparanormal model, the squared distance between two continuous
-multivariate distributions \eqn{P} and \eqn{Q} decomposes additively into
+Under the nonparanormal model, the squared NPT metric between two continuous
+multivariate distributions \eqn{P_i} and \eqn{P_k} decomposes additively into
 marginal quantile differences and latent Gaussian correlation distances:
-\deqn{\mathrm{NPT}_c^2(P, Q) = \sum_{j=1}^d \|Q_{P,j} - Q_{Q,j}\|_{L^2}^2 + c\,\mathrm{BW}^2(R_P, R_Q)}
+\deqn{d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d \|Q_i^{(j)} - Q_k^{(j)}\|_{L^2}^2 + \mathcal{B}^2(\Sigma_i, \Sigma_k)}
 
 \describe{
 \item{\strong{Marginal distance (\eqn{L^2} between quantiles)}}{
 The sum of squared \eqn{L^2} distances between marginal quantile functions:
-\deqn{\sum_{j=1}^d \|Q_{P,j} - Q_{Q,j}\|_{L^2}^2 = \sum_{j=1}^d \int_0^1 \left( Q_{P,j}(p) - Q_{Q,j}(p) \right)^2 dp}
+\deqn{\sum_{j=1}^d \|Q_i^{(j)} - Q_k^{(j)}\|_{L^2}^2 = \sum_{j=1}^d \int_0^1 \left( Q_i^{(j)}(p) - Q_k^{(j)}(p) \right)^2 dp}
 approximated via midpoint numerical integration on the probability grid.
 }
 \item{\strong{Weighted correlation distance (Bures--Wasserstein)}}{
-The squared Bures--Wasserstein distance between the latent Gaussian correlation matrices
-is multiplied by the positive weight \eqn{c=\code{bw_weight}}:
-\deqn{c\,\mathrm{BW}^2(R_P, R_Q) = c\left[\operatorname{tr}(R_P) + \operatorname{tr}(R_Q) - 2 \operatorname{tr}\left( \left( R_P^{1/2} R_Q R_P^{1/2} \right)^{1/2} \right)\right]}
+The squared Bures--Wasserstein distance between the latent Gaussian correlation matrices is
+\deqn{\mathcal{B}^2(\Sigma_i, \Sigma_k) = \operatorname{tr}(\Sigma_i) + \operatorname{tr}(\Sigma_k) - 2 \operatorname{tr}\left( \left( \Sigma_i^{1/2} \Sigma_k \Sigma_i^{1/2} \right)^{1/2} \right).}
+The \code{bw_weight} argument optionally multiplies this component by a positive scalar.
 For bivariate distributions (\eqn{d = 2}), an exact closed-form scalar formula is used for maximum speed.
 }
 }

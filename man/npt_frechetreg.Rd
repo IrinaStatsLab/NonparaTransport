@@ -56,10 +56,10 @@ latent Gaussian correlation regression:
 \enumerate{
 \item \strong{Marginal quantile regressions}: For each variable \eqn{j = 1, \dots, d},
 the 1D 2-Wasserstein Fréchet regression of marginal quantile functions
-\eqn{Q_{P_i, j}} against predictors \eqn{X} is computed via
+\eqn{Q_i^{(j)}} against predictors \eqn{X} is computed via
 \code{fastfrechet::frechetreg_univar2wass}.
 \item \strong{Latent correlation regression}: The latent Gaussian correlation
-matrices \eqn{R_{P_i}} are regressed using projected Bures--Wasserstein (BW)
+matrices \eqn{\Sigma_i} are regressed using projected Bures--Wasserstein (BW)
 Riemannian gradient descent (Park and Gaynanova 2026). For bivariate responses
 (\eqn{d = 2}), an exact closed-form solution is used.
 }

@@ -8,15 +8,15 @@
 #' Under the nonparanormal transport framework, total and residual variation
 #' decompose additively into marginal quantile components and a latent correlation
 #' component. For each component, the generalized \eqn{R^2} is defined as:
-#' \deqn{R^2 = 1 - \frac{\sum_{i=1}^n d^2(Y_i, \hat{Y}(X_i))}{\sum_{i=1}^n d^2(Y_i, \hat{Y}(\bar{X}))}}
+#' \deqn{R^2 = 1 - \frac{\sum_{i=1}^n d^2(P_i, \hat{P}(X_i))}{\sum_{i=1}^n d^2(P_i, \hat{P}(\bar{X}))}}
 #' where:
 #' \itemize{
 #'   \item \strong{Marginal components (\eqn{j = 1, \dots, d})}: Evaluates squared
 #'     \eqn{L^2} Wasserstein loss between observed and predicted marginal quantile functions:
-#'     \deqn{R_j^2 = 1 - \frac{\sum_{i=1}^n \|Q_{P_i, j} - \hat{Q}_{j}(X_i)\|_{L^2}^2}{\sum_{i=1}^n \|Q_{P_i, j} - \hat{Q}_{j}(\bar{X})\|_{L^2}^2}}
+#'     \deqn{R_j^2 = 1 - \frac{\sum_{i=1}^n \|Q_i^{(j)} - \hat{Q}^{(j)}(X_i)\|_{L^2}^2}{\sum_{i=1}^n \|Q_i^{(j)} - \hat{Q}^{(j)}(\bar{X})\|_{L^2}^2}}
 #'   \item \strong{Latent correlation component}: Evaluates squared Bures--Wasserstein
 #'     loss between observed and predicted latent correlation matrices:
-#'     \deqn{R_{\mathrm{corr}}^2 = 1 - \frac{\sum_{i=1}^n \mathrm{BW}^2(R_{P_i}, \hat{R}(X_i))}{\sum_{i=1}^n \mathrm{BW}^2(R_{P_i}, \hat{R}(\bar{X}))}}
+#'     \deqn{R_{\mathrm{corr}}^2 = 1 - \frac{\sum_{i=1}^n \mathcal{B}^2(\Sigma_i, \hat{\Sigma}(X_i))}{\sum_{i=1}^n \mathcal{B}^2(\Sigma_i, \hat{\Sigma}(\bar{X}))}}
 #' }
 #' Here \eqn{\bar{X} = \frac{1}{n} \sum_{i=1}^n X_i} denotes the sample mean predictor vector.
 #' If a component exhibits zero total variation around \eqn{\bar{X}}, its \eqn{R^2} is
@@ -28,8 +28,8 @@
 #' \describe{
 #'   \item{\code{component}}{Name of the response component (marginal variable names and \code{"latent_correlation"}).}
 #'   \item{\code{r_squared}}{Estimated component-wise \eqn{R^2} value in \eqn{(-\infty, 1]}.}
-#'   \item{\code{residual_sum}}{Sum of squared residual Fréchet losses around fitted values \eqn{\hat{Y}(X_i)}.}
-#'   \item{\code{total_sum}}{Sum of squared total Fréchet losses around the baseline fit \eqn{\hat{Y}(\bar{X})}.}
+#'   \item{\code{residual_sum}}{Sum of squared residual Fréchet losses around fitted values \eqn{\hat{P}(X_i)}.}
+#'   \item{\code{total_sum}}{Sum of squared total Fréchet losses around the baseline fit \eqn{\hat{P}(\bar{X})}.}
 #' }
 #'
 #' @seealso \code{\link{npt_frechetreg}}, \code{\link{npt_permutation_test}}
@@ -65,7 +65,8 @@ npt_component_r2 <- function(
 #' }
 #'
 #' Raw permutation p-values use the standard add-one correction:
-#' \deqn{p_j = \frac{1 + \sum_{b=1}^B \mathbf{1}\left( R_{j, (b)}^2 \ge R_{j, \mathrm{obs}}^2 \right)}{B + 1}}
+#' \deqn{p_\ell = \frac{1 + \sum_{b=1}^B \mathbf{1}\left( R_{\ell, (b)}^2 \ge R_{\ell, \mathrm{obs}}^2 \right)}{B + 1},}
+#' where \eqn{\ell} indexes the \eqn{d} marginal components and the latent correlation component.
 #' Family-wise error rate (FWER) across all \eqn{d + 1} components is controlled
 #' using the single-step Westfall--Young min-\eqn{p} procedure.
 #'
@@ -208,7 +209,7 @@ print.npt_permutation_test <- function(x, ...) {
 
 # Computes observed component-wise R^2 table and total variation denominator
 .component_r2_from_prepared <- function(prepared) {
-  # 1. Residual variation: losses around in-sample fitted values hat{Y}(X_i)
+  # 1. Residual variation: losses around in-sample fitted values hat{P}(X_i)
   fitted <- .fit_npt_regression(prepared)
   numerator <- .component_losses(prepared$Y, fitted)
 

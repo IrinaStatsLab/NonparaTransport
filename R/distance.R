@@ -1,24 +1,24 @@
-#' Pairwise Squared Nonparanormal Transport Distances
+#' Pairwise Squared Nonparanormal Transport Metrics
 #'
-#' Computes the matrix of pairwise squared nonparanormal transport (NPT) distances
+#' Computes the matrix of pairwise squared nonparanormal transport (NPT) metrics
 #' across distributions using precomputed representations from [as_nonparanormal()].
 #'
 #' @details
-#' Under the nonparanormal model, the squared distance between two continuous 
-#' multivariate distributions \eqn{P} and \eqn{Q} decomposes additively into
+#' Under the nonparanormal model, the squared NPT metric between two continuous
+#' multivariate distributions \eqn{P_i} and \eqn{P_k} decomposes additively into
 #' marginal quantile differences and latent Gaussian correlation distances:
-#' \deqn{\mathrm{NPT}_c^2(P, Q) = \sum_{j=1}^d \|Q_{P,j} - Q_{Q,j}\|_{L^2}^2 + c\,\mathrm{BW}^2(R_P, R_Q)}
+#' \deqn{d_{\mathrm{NPT}}^2(P_i, P_k) = \sum_{j=1}^d \|Q_i^{(j)} - Q_k^{(j)}\|_{L^2}^2 + \mathcal{B}^2(\Sigma_i, \Sigma_k)}
 #'
 #' \describe{
 #'   \item{\strong{Marginal distance (\eqn{L^2} between quantiles)}}{
 #'     The sum of squared \eqn{L^2} distances between marginal quantile functions:
-#'     \deqn{\sum_{j=1}^d \|Q_{P,j} - Q_{Q,j}\|_{L^2}^2 = \sum_{j=1}^d \int_0^1 \left( Q_{P,j}(p) - Q_{Q,j}(p) \right)^2 dp}
+#'     \deqn{\sum_{j=1}^d \|Q_i^{(j)} - Q_k^{(j)}\|_{L^2}^2 = \sum_{j=1}^d \int_0^1 \left( Q_i^{(j)}(p) - Q_k^{(j)}(p) \right)^2 dp}
 #'     approximated via midpoint numerical integration on the probability grid.
 #'   }
 #'   \item{\strong{Weighted correlation distance (Bures--Wasserstein)}}{
-#'     The squared Bures--Wasserstein distance between the latent Gaussian correlation matrices
-#'     is multiplied by the positive weight \eqn{c=\code{bw_weight}}:
-#'     \deqn{c\,\mathrm{BW}^2(R_P, R_Q) = c\left[\operatorname{tr}(R_P) + \operatorname{tr}(R_Q) - 2 \operatorname{tr}\left( \left( R_P^{1/2} R_Q R_P^{1/2} \right)^{1/2} \right)\right]}
+#'     The squared Bures--Wasserstein distance between the latent Gaussian correlation matrices is
+#'     \deqn{\mathcal{B}^2(\Sigma_i, \Sigma_k) = \operatorname{tr}(\Sigma_i) + \operatorname{tr}(\Sigma_k) - 2 \operatorname{tr}\left( \left( \Sigma_i^{1/2} \Sigma_k \Sigma_i^{1/2} \right)^{1/2} \right).}
+#'     The \code{bw_weight} argument optionally multiplies this component by a positive scalar.
 #'     For bivariate distributions (\eqn{d = 2}), an exact closed-form scalar formula is used for maximum speed.
 #'   }
 #' }
@@ -27,7 +27,7 @@
 #' @param decompose Logical; if `TRUE`, returns a named list with the separate
 #'   `marginal`, `correlation`, and `total` distance matrices. If `FALSE` (default),
 #'   returns only the `total` squared-distance matrix.
-#' @param bw_weight Positive finite scalar \eqn{c} multiplying the squared
+#' @param bw_weight Positive finite scalar multiplying the squared
 #'   Bures--Wasserstein correlation term (default is `1`). Changing this weight
 #'   does not alter the marginal term.
 #'
@@ -36,7 +36,7 @@
 #'   \describe{
 #'     \item{\code{marginal}}{\eqn{n \times n} matrix of squared marginal quantile distances.}
 #'     \item{\code{correlation}}{\eqn{n \times n} matrix of weighted squared
-#'       Bures--Wasserstein correlation distances \eqn{c\,\mathrm{BW}^2}.}
+#'       Bures--Wasserstein correlation distances.}
 #'     \item{\code{total}}{\eqn{n \times n} matrix of total squared NPT distances
 #'       (\code{marginal + correlation}).}
 #'   }
@@ -76,7 +76,7 @@ pairwise_npt_distance <- function(summaries, decompose = FALSE, bw_weight = 1) {
 #'
 #' @return A numeric scalar containing the total squared NPT distance. If
 #'   `decompose = TRUE`, returns a list with scalar components `marginal`,
-#'   `correlation` (the weighted term \eqn{c\,\mathrm{BW}^2}), and `total`.
+#'   `correlation` (the weighted Bures--Wasserstein term), and `total`.
 #'
 #' @seealso [pairwise_npt_distance()], [as_nonparanormal()]
 #' @export
@@ -116,7 +116,7 @@ npt_distance <- function(
   quantiles <- summaries$quantiles
   correlations <- summaries$correlations
 
-  # Reuse cached R^{1/2} matrices when available. For a single requested pair,
+  # Reuse cached Sigma^{1/2} matrices when available. For a single requested pair,
   # subset the cache together with the quantiles and correlations.
   square_roots <- summaries$correlation_sqrts
 

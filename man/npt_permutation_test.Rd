@@ -70,7 +70,8 @@ baseline total sum of squares.
 }
 
 Raw permutation p-values use the standard add-one correction:
-\deqn{p_j = \frac{1 + \sum_{b=1}^B \mathbf{1}\left( R_{j, (b)}^2 \ge R_{j, \mathrm{obs}}^2 \right)}{B + 1}}
+\deqn{p_\ell = \frac{1 + \sum_{b=1}^B \mathbf{1}\left( R_{\ell, (b)}^2 \ge R_{\ell, \mathrm{obs}}^2 \right)}{B + 1},}
+where \eqn{\ell} indexes the \eqn{d} marginal components and the latent correlation component.
 Family-wise error rate (FWER) across all \eqn{d + 1} components is controlled
 using the single-step Westfall--Young min-\eqn{p} procedure.
 }
