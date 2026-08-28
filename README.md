@@ -168,10 +168,19 @@ package vignettes:
   Matrix](vignettes/npt-distance-matrix.Rmd)**: Detailed guide on
   computing pairwise distance matrices, and a downstream analysis
   example using Multidimensional Scaling (MDS).
+
+``` r
+vignette("npt-distance-matrix", package = "NonparaTransport")
+```
+
 - **[Fréchet Regression of Multivariate
-  Distributions](vignettes/npt-regression.Rmd)**: End-to-end regression
-  case study covering marginal and dependence components separately, and
-  inference.
+  Distributions](vignettes/npt-regression.Rmd)**: Frechet regression of
+  multivariate distributions and component-wise (marginals
+  vs. dependence) interpretations.
+
+``` r
+vignette("npt-regression", package = "NonparaTransport")
+```
 
 ------------------------------------------------------------------------
 
