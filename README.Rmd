@@ -139,12 +139,12 @@ For in-depth tutorials and mathematical formulations, explore the package vignet
 
 | Function | Purpose | Input | Output |
 |:---|:---|:---|:---|
-| `as_nonparanormal()` | Fits nonparanormal models (optionally with pooled median/MAD preprocessing), estimating marginal quantiles and latent correlations | List of $n$ matrices $Y_i \in \mathbb{R}^{N_i \times d}$ | `nonparanormal` object |
+| `as_nonparanormal()` | Models distributions within the nonparanormal family, estimating marginal quantiles and latent correlations | List of $n$ matrices $Y_i \in \mathbb{R}^{N_i \times d}$ | `nonparanormal` object |
 | `npt_distance()` | Computes one weighted squared NPT distance between two distributions | `nonparanormal`, two names or indices | Scalar or decomposed list |
 | `pairwise_npt_distance()` | Computes the weighted $n \times n$ squared NPT distance matrix and decomposition | `nonparanormal` | $n \times n$ matrix or decomposed list |
 | `npt_frechetreg()` | Fits multivariate Fréchet regression and predicts at new points $Z$ | Predictors $X$, `nonparanormal`, $Z$ | `npt_frechetreg` object |
-| `plot_npt_density()` | Reconstructs smooth 2D density heatmaps on shared coordinate grids | `npt_frechetreg` | Heatmap plot & grid data |
-| `npt_component_r2()` | Evaluates separate $R_j^2$ for each marginal and $R_{\mathrm{corr}}^2$ | Predictors $X$, `nonparanormal` | Data frame of component $R^2$ |
+| `plot_npt_density()` | Visualizes smooth 2D density heatmaps on shared coordinate grids | `npt_frechetreg` | Heatmap plot & grid data |
+| `npt_component_r2()` | Evaluates component-wise $R_j^2$ for each marginal and $R_{\mathrm{corr}}^2$ | Predictors $X$, `nonparanormal` | Data frame of component $R^2$ |
 | `npt_permutation_test()` | Westfall--Young min-$p$ permutation test for FWER control | Predictors $X$, `nonparanormal`, $B$ | Permutation test summary table |
 
 ---
