@@ -39,7 +39,8 @@ figure
 Thumbs.db
 
 # ------------------------------------------------------------------------------
-# Local Repository / AI Files
+# Local Repository / Developer Files
 # ------------------------------------------------------------------------------
 .tmp-library/
 .archive/
+developer/

@@ -78,7 +78,7 @@ test_that("as_nonparanormal uses type-7 quantiles on equal-interval midpoints", 
   }
 })
 
-test_that("pooled median and raw MAD standardization matches direct preprocessing", {
+test_that("pooled MAD standardization matches direct preprocessing", {
   data <- example_distributions()
   pooled <- do.call(rbind, data)
   centers <- apply(pooled, 2L, median)
@@ -93,9 +93,11 @@ test_that("pooled median and raw MAD standardization matches direct preprocessin
   manually_standardized <- lapply(data, function(distribution) {
     sweep(sweep(distribution, 2L, centers, "-"), 2L, scales, "/")
   })
+  raw <- .standardize_pooled_median_mad(data, colnames(pooled), correction = FALSE)
+  expect_equal(raw$data, manually_standardized)
   observed <- as_nonparanormal(data, M = 13L, standardize = TRUE)
   expected <- as_nonparanormal(
-    manually_standardized,
+    lapply(manually_standardized, `/`, 1.4826),
     M = 13L,
     standardize = FALSE
   )
@@ -103,9 +105,11 @@ test_that("pooled median and raw MAD standardization matches direct preprocessin
   expect_true(observed$standardization$applied)
   expect_identical(observed$standardization$method, "pooled_median_mad")
   expect_equal(observed$standardization$center, centers, tolerance = 1e-14)
-  expect_equal(observed$standardization$scale, scales, tolerance = 1e-14)
+  expect_equal(observed$standardization$scale, 1.4826 * scales, tolerance = 1e-14)
   expect_equal(observed$quantiles, expected$quantiles, tolerance = 1e-13)
   expect_equal(observed$correlations, expected$correlations, tolerance = 1e-13)
+
+  expect_equal(observed$standardization$scale, apply(pooled, 2L, stats::mad))
 
   unscaled <- as_nonparanormal(data, M = 13L)
   expect_false(unscaled$standardization$applied)
@@ -158,16 +162,13 @@ test_that("projected latent correlations are strict correlation matrices", {
   )
 
   # The projection/shrinkage contract has three parts: symmetry, unit diagonal,
-  # and eigenvalues bounded below by the requested shrinkage. Cached roots must
-  # also square back to the same matrices.
+  # and eigenvalues bounded below by the requested shrinkage.
   for (i in seq_along(summaries$correlations)) {
     correlation <- summaries$correlations[[i]]
-    square_root <- summaries$correlation_sqrts[[i]]
 
     expect_equal(correlation, t(correlation), tolerance = 1e-12)
     expect_equal(unname(diag(correlation)), rep(1, nrow(correlation)), tolerance = 1e-12)
     expect_gte(min(eigen(correlation, symmetric = TRUE, only.values = TRUE)$values), shrinkage - 1e-10)
-    expect_equal(square_root %*% square_root, correlation, tolerance = 1e-10)
   }
 })
 
@@ -209,6 +210,79 @@ test_that("an indefinite pairwise estimate is projected to the correlation cone"
     min(eigen(projected, symmetric = TRUE, only.values = TRUE)$values),
     shrinkage - 1e-9
   )
+})
+
+test_that("bivariate summaries skip caching while preserving shrinkage", {
+  x <- seq_len(12L)
+  data <- list(positive = cbind(x, x^2), negative = cbind(x, -x),
+               tied = cbind(rep(1:4, each = 3), rep(4:1, 3)))
+  data <- lapply(data, unname)
+  for (shrinkage in c(0.001, 1e-10, 0.8)) {
+    cached <- as_nonparanormal(data, pd_shrinkage = shrinkage)
+    uncached <- as_nonparanormal(data, pd_shrinkage = shrinkage, cache_sqrt = FALSE)
+    expect_null(cached$correlation_sqrts)
+    expect_null(uncached$correlation_sqrts)
+    expect_false(cached$cache_sqrt)
+    expect_identical(cached, uncached)
+    expect_output(print(cached), "Cached correlation square roots: no")
+    for (i in seq_along(data)) {
+      rho <- (1 - shrinkage) * sin(pi * brute_tau_a(data[[i]][, 1], data[[i]][, 2]) / 2)
+      expected <- matrix(c(1, rho, rho, 1), 2)
+      expect_equal(unname(cached$correlations[[i]]), expected, tolerance = 1e-14)
+    }
+  }
+  # The compiled entry point must also skip roots when called directly.
+  compiled <- NonparaTransport:::distribution_summaries_cpp(data, 10L, 0.001, TRUE)
+  expect_null(compiled$correlation_sqrts)
+})
+
+test_that("higher-dimensional cached roots and repair agree with a strict reference", {
+  # A direct R reference uses tight convergence, independently of the compiled
+  # stopping rule. Small N_i relative to d forces genuinely indefinite inputs.
+  psd <- function(x) {
+    eig <- eigen((x + t(x)) / 2, symmetric = TRUE)
+    tcrossprod(sweep(eig$vectors, 2L, sqrt(pmax(eig$values, 0)), "*"))
+  }
+  repair <- function(raw) {
+    y <- raw
+    correction <- matrix(0, nrow(raw), ncol(raw))
+    for (iteration in seq_len(1000L)) {
+      previous <- y
+      residual <- y - correction
+      projected <- psd(residual)
+      correction <- projected - residual
+      y <- projected
+      diag(y) <- 1
+      if (norm(y - previous, "F") / max(1, norm(previous, "F")) < 1e-11) break
+    }
+    cov2cor(psd(y))
+  }
+  set.seed(9402)
+  data <- list(regular = matrix(rnorm(600), 100, 6),
+               small_sample = matrix(rnorm(36), 6, 6))
+  # Perfectly repeated coordinates also exercise tiny eigenvalues and a
+  # shrinkage intensity below the former PSD acceptance tolerance.
+  data$singular <- cbind(data$regular[, 1:2], data$regular[, 1:2], data$regular[, 1:2])
+  raw_matrices <- lapply(data, function(x) sin(pi * cor(x, method = "kendall") / 2))
+  expect_lt(min(eigen(raw_matrices$small_sample, symmetric = TRUE)$values), -1e-8)
+  for (shrinkage in c(0.001, 1e-10)) {
+    cached <- as_nonparanormal(data, pd_shrinkage = shrinkage)
+    uncached <- as_nonparanormal(data, pd_shrinkage = shrinkage, cache_sqrt = FALSE)
+    expect_true(cached$cache_sqrt)
+    expect_length(cached$correlation_sqrts, length(data))
+    expect_false(uncached$cache_sqrt)
+    expect_null(uncached$correlation_sqrts)
+    expect_equal(cached$correlations, uncached$correlations, tolerance = 1e-10)
+    for (i in seq_along(data)) {
+      observed <- unname(cached$correlations[[i]])
+      reference <- (1 - shrinkage) * repair(raw_matrices[[i]]) + shrinkage * diag(6)
+      expect_lt(max(abs(observed - reference)), 1e-5)
+      expect_gte(min(eigen(observed, symmetric = TRUE)$values), shrinkage - 1e-12)
+      root <- unname(cached$correlation_sqrts[[i]])
+      expect_equal(root, t(root), tolerance = 1e-13)
+      expect_equal(root %*% root, observed, tolerance = 1e-11)
+    }
+  }
 })
 
 test_that("R validation rejects malformed or unidentified inputs", {

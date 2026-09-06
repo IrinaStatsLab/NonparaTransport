@@ -17,7 +17,6 @@ pkgload::load_all(quiet = TRUE)
 # NonparaTransport
 
 <!-- badges: start -->
-[![R-CMD-check](https://github.com/IrinaStatsLab/NonparaTransport/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/IrinaStatsLab/NonparaTransport/actions/workflows/R-CMD-check.yaml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 <!-- badges: end -->
 
@@ -86,7 +85,7 @@ We illustrate the NPT distance computation for two distributions in $d = 10$ dim
 ```{r quick-start-distance}
 library(NonparaTransport)
 
-set.seed(2026)
+set.seed(20261225)
 d <- 10L
 n_obs <- c(800L, 1200L)
 
@@ -157,5 +156,5 @@ vignette("npt-regression", package = "NonparaTransport")
 
 ## License
 
-This package is licensed under the [GPL-3 License](LICENSE).
+This package is licensed under the [GPL-3 License](LICENSE.md).
 

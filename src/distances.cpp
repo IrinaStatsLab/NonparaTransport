@@ -184,7 +184,7 @@ Rcpp::List pairwise_summary_distance_cpp(Rcpp::List quantiles,
     }
   }
 
+  // R applies bw_weight and constructs the total once from these components.
   return Rcpp::List::create(Rcpp::Named("marginal") = marginal,
-                            Rcpp::Named("correlation") = correlation,
-                            Rcpp::Named("total") = marginal + correlation);
+                            Rcpp::Named("correlation") = correlation);
 }

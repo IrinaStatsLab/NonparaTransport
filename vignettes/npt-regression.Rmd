@@ -377,7 +377,8 @@ bounded_test <- npt_permutation_test(
   X,
   response_summaries,
   B = 999L,
-  bounds = cgm_bounds
+  bounds = cgm_bounds,
+  seed = 20261225
 )
 ```
 
@@ -402,10 +403,10 @@ fit <- npt_frechetreg(X, Y)
 prediction <- npt_frechetreg(X, Y, Z = Z_new)
 
 # 4. Visualize an in-sample fit for a selected variable pair
-density_plot <- plot_npt_density(fit, variables = c("var1", "var2"))
+density_plot <- plot_npt_density(fit, variables = c("var1", "var2"), seed = 20261225)
 correlation_plot <- plot_npt_correlation(fit, variables = c("var1", "var2"))
 
 # 5. Evaluate goodness-of-fit and statistical significance
 r2 <- npt_component_r2(X, Y)
-test <- npt_permutation_test(X, Y, B = 999L, workers = 2L)
+test <- npt_permutation_test(X, Y, B = 999L, workers = 2L, seed = 20261225)
 ```

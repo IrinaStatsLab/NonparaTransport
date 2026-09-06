@@ -1,6 +1,6 @@
 Package: NonparaTransport
 Title: Nonparanormal Transport for Multivariate Distributional Data Analysis
-Version: 1.0.0
+Version: 1.0.1
 Authors@R:
     c(
         person("Junyoung", "Park", email = "junyoup@umich.edu", role = c("aut", "cre")),

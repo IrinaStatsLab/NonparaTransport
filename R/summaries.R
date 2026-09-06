@@ -33,13 +33,13 @@
 #'   \eqn{(1 - \lambda) R + \lambda I} (default is `0.001`).
 #' @param cache_sqrt Logical; if `TRUE` (default), precomputes and caches
 #'   matrix square roots \eqn{R^{1/2}} to speed up pairwise distance calculations
-#'   when dimension \eqn{d > 2}.
+#'   when dimension \eqn{d > 2}. For \eqn{d = 2}, roots are not computed or
+#'   cached, even when `TRUE`, because bivariate distances use scalar correlations.
 #' @param standardize Logical; if `TRUE`, preprocesses the pooled collection for
 #'   distance computation by subtracting each variable's pooled median
-#'   and dividing by its pooled median absolute deviation (MAD). The MAD is
-#'   \eqn{\operatorname{median}|X-\operatorname{median}(X)|}, without a normal-
-#'   consistency multiplier. The default is `FALSE`; regression therefore uses
-#'   the original measurement units unless standardization is explicitly requested.
+#'   and dividing by its pooled MAD from `stats::mad()`. The default is `FALSE`;
+#'   regression or other methods therefore use original measurement units
+#'   unless standardization is explicitly requested.
 #'
 #' @return An object of class \code{"nonparanormal"}, containing:
 #' \describe{
@@ -48,7 +48,9 @@
 #'   \item{\code{correlations}}{A list of \eqn{n} positive-definite \eqn{d \times d}
 #'     latent correlation matrices.}
 #'   \item{\code{correlation_sqrts}}{A list of \eqn{n} matrix square roots \eqn{R^{1/2}}
-#'     if \code{cache_sqrt = TRUE}, or \code{NULL} otherwise.}
+#'     if \code{cache_sqrt = TRUE} and \eqn{d > 2}, or \code{NULL} otherwise.}
+#'   \item{\code{cache_sqrt}}{The effective caching setting; always \code{FALSE}
+#'     for bivariate data.}
 #'   \item{\code{probabilities}}{Numeric vector containing the \eqn{M}
 #'     probability-interval midpoints in \eqn{(0, 1)}.}
 #'   \item{\code{sample_sizes}}{Named integer vector of sample sizes \eqn{N_i} across distributions.}
@@ -64,11 +66,12 @@
 #' @seealso \code{\link{pairwise_npt_distance}}, \code{\link{npt_frechetreg}}
 #' @export
 as_nonparanormal <- function(
-    data,
-    M = 100L,
-    pd_shrinkage = 0.001,
-    cache_sqrt = TRUE,
-    standardize = FALSE) {
+  data,
+  M = 100L,
+  pd_shrinkage = 0.001,
+  cache_sqrt = TRUE,
+  standardize = FALSE
+) {
   # Validate input matrices and normalize parameters
   validated <- .validate_distributional_data(data)
   M <- .as_integer_count(M, "M", minimum = 2L)
@@ -138,7 +141,7 @@ as_nonparanormal <- function(
   summaries$distribution_names <- validated$distribution_names
   summaries$variable_names <- validated$variable_names
   summaries$pd_shrinkage <- pd_shrinkage
-  summaries$cache_sqrt <- cache_sqrt
+  summaries$cache_sqrt <- !is.null(summaries$correlation_sqrts)
   summaries$standardization <- standardization
 
   structure(summaries, class = "nonparanormal")

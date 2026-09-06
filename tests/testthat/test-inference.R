@@ -54,20 +54,21 @@ test_that("component-wise R-squared is undefined for a constant response", {
 })
 
 test_that("permutation inference returns component-wise null distributions", {
+  # A few permutations suffice for output structure; exact min-p cases follow.
   example <- make_regression_example(d = 2L, n = 6L, sample_size = 25L)
   result <- npt_permutation_test(
     example$X,
     example$Y,
-    B = 50L,
+    B = 6L,
     workers = 1L,
     seed = 17L
   )
 
   expect_s3_class(result, "npt_permutation_test")
-  expect_equal(dim(result$null_distribution), c(50L, 3L))
+  expect_equal(dim(result$null_distribution), c(6L, 3L))
   expect_identical(colnames(result$null_distribution), result$results$component)
   expect_false("total" %in% result$results$component)
-  expect_true(all(result$results$p_value >= 1 / 51))
+  expect_true(all(result$results$p_value >= 1 / 7))
   expect_true(all(result$results$p_value_adjusted >= result$results$p_value))
   expect_true(all(result$results$p_value_adjusted <= 1))
 })

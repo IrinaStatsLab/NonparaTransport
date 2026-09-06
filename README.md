@@ -5,7 +5,6 @@
 
 <!-- badges: start -->
 
-[![R-CMD-check](https://github.com/IrinaStatsLab/NonparaTransport/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/IrinaStatsLab/NonparaTransport/actions/workflows/R-CMD-check.yaml)
 [![License: GPL
 v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 <!-- badges: end -->
@@ -116,7 +115,7 @@ $d = 10$ dimensions with unequal sample sizes ($N_1 = 800, N_2 = 1200$):
 ``` r
 library(NonparaTransport)
 
-set.seed(2026)
+set.seed(20261225)
 d <- 10L
 n_obs <- c(800L, 1200L)
 
@@ -148,7 +147,7 @@ timing <- system.time({
 
 # Output squared distance
 dist
-#> [1] 8.934175
+#> [1] 3.921847
 
 cat(sprintf("Total runtime: %.4f seconds\n", timing[["elapsed"]]))
 #> Total runtime: 0.0100 seconds
@@ -200,4 +199,4 @@ vignette("npt-regression", package = "NonparaTransport")
 
 ## License
 
-This package is licensed under the [GPL-3 License](LICENSE).
+This package is licensed under the [GPL-3 License](LICENSE.md).

@@ -81,11 +81,12 @@ pairwise_npt_distance <- function(summaries, decompose = FALSE, bw_weight = 1) {
 #' @seealso [pairwise_npt_distance()], [as_nonparanormal()]
 #' @export
 npt_distance <- function(
-    summaries,
-    first,
-    second,
-    decompose = FALSE,
-    bw_weight = 1) {
+  summaries,
+  first,
+  second,
+  decompose = FALSE,
+  bw_weight = 1
+) {
   summaries <- .require_npt_summaries(summaries)
   decompose <- .as_flag(decompose, "decompose")
   bw_weight <- .as_positive_scalar(bw_weight, "bw_weight")
@@ -140,7 +141,10 @@ npt_distance <- function(
     correlations,
     square_roots
   )
-  distances$correlation <- bw_weight * distances$correlation
+  # Optional weight multiplication to the BW component.
+  if (bw_weight != 1) {
+    distances$correlation <- bw_weight * distances$correlation
+  }
   distances$total <- distances$marginal + distances$correlation
   distances
 }
@@ -159,8 +163,8 @@ npt_distance <- function(
   }
 
   if (is.numeric(value) && length(value) == 1L && is.finite(value) &&
-      value == as.integer(value) && value >= 1L &&
-      value <= length(distribution_names)) {
+    value == as.integer(value) && value >= 1L &&
+    value <= length(distribution_names)) {
     return(as.integer(value))
   }
 

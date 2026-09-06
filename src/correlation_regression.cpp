@@ -165,14 +165,24 @@ arma::mat global_frechet_weights(const arma::mat &X, const arma::mat &Z,
 // Closed-form correlation barycenter for bivariate distributions (d = 2):
 // Maximizes a * sqrt(1 + rho) + b * sqrt(1 - rho) over rho in [-1, 1]
 arma::mat bivariate_barycenter(const std::vector<arma::mat> &samples,
+                               const arma::vec &positive_roots,
+                               const arma::vec &negative_roots,
                                const arma::rowvec &weights,
                                bool &constant_objective) {
   double positive = 0.0;
   double negative = 0.0;
-  for (arma::uword i = 0; i < weights.n_elem; ++i) {
-    const double rho = std::max(-1.0, std::min(1.0, samples[i](0, 1)));
-    positive += weights[i] * std::sqrt(1.0 + rho);
-    negative += weights[i] * std::sqrt(1.0 - rho);
+  if (positive_roots.is_empty()) {
+    // A single prediction has no repeated roots, so avoid cache allocation.
+    for (arma::uword i = 0; i < weights.n_elem; ++i) {
+      const double rho = std::max(-1.0, std::min(1.0, samples[i](0, 1)));
+      positive += weights[i] * std::sqrt(1.0 + rho);
+      negative += weights[i] * std::sqrt(1.0 - rho);
+    }
+  } else {
+    for (arma::uword i = 0; i < weights.n_elem; ++i) {
+      positive += weights[i] * positive_roots[i];
+      negative += weights[i] * negative_roots[i];
+    }
   }
 
   double rho;
@@ -285,12 +295,27 @@ Rcpp::List correlation_regression_cpp(Rcpp::List correlations,
   Rcpp::NumericVector final_change(number_predictions);
   Rcpp::CharacterVector status(number_predictions);
 
+  // These scalar roots depend only on observed correlations. Reuse them at
+  // every prediction point while retaining the weighted-sum order below.
+  arma::vec positive_roots;
+  arma::vec negative_roots;
+  if (d == 2 && number_predictions > 1) {
+    positive_roots.set_size(n);
+    negative_roots.set_size(n);
+    for (int i = 0; i < n; ++i) {
+      const double rho = std::max(-1.0, std::min(1.0, samples[i](0, 1)));
+      positive_roots[i] = std::sqrt(1.0 + rho);
+      negative_roots[i] = std::sqrt(1.0 - rho);
+    }
+  }
+
   for (int prediction = 0; prediction < number_predictions; ++prediction) {
     // Case 1: Bivariate (d = 2) -> closed-form scalar barycenter
     if (d == 2) {
       bool constant_objective = false;
       const arma::mat result = bivariate_barycenter(
-          samples, weights.row(prediction), constant_objective);
+          samples, positive_roots, negative_roots,
+          weights.row(prediction), constant_objective);
       predictions[prediction] = result;
       iterations[prediction] = 1;
       converged[prediction] = true;

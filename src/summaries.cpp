@@ -14,28 +14,19 @@ namespace {
 // =============================================================================
 // Nonparanormal Distribution Summaries (C++ Engine)
 //
-// For each N_i x d empirical sample matrix, this file precomputes:
-//   1. d marginal quantile functions evaluated on an M-point grid.
-//   2. A d x d latent Gaussian copula correlation matrix (via Kendall's tau-a,
-//      the sine bridge, and projection to the correlation cone).
-//   3. (Optional) Matrix square roots Sigma^{1/2} for fast distance calculations.
+// Entry point: distribution_summaries_cpp().
+// For each N_i x d sample matrix:
+//   1. sort_column() sorts each variable once and records ties.
+//   2. quantiles_type7() evaluates marginal quantiles at M probability midpoints.
+//   3. correlation_from_sorted() reuses the sort orders to estimate latent
+//      correlations as sin(pi * tau-a / 2).
+//   4. For d = 2, shrink the scalar correlation directly. For d > 2,
+//      nearest_correlation() enforces the correlation constraints, then shrinks.
+//   5. Optionally cache Sigma^{1/2} for d > 2, reusing eigenvectors when possible.
 //
-// Key optimization:
-//   Each column is sorted once in O(N_i log N_i). The sorted values and
-//   permutation orders are reused for both quantile interpolation and fast
-//   Kendall's tau-a across all pairs of variables.
-//
-// Reading Guide (Execution Flow):
-//   The main exported entry point is `distribution_summaries_cpp()` at the
-//   bottom of this file. It orchestrates the internal helper functions in
-//   order:
-//     1. sort_column()            -> Single-pass sorting and tie-block
-//     detection
-//     2. quantiles_type7()        -> Type-7 empirical quantile evaluation
-//     3. correlation_from_sorted()-> Pairwise Kendall's tau-a and sine bridge
-//        `- merge_and_count()     -> O(N_i log N_i) discordant pair counting
-//     4. nearest_correlation()    -> Dykstra PSD projection + pd_shrinkage
-//     5. symmetric_sqrt()         -> Optional Sigma^{1/2} caching
+// A correlation matrix is symmetric, positive semidefinite (PSD), and has unit
+// diagonal. Entrywise estimation can violate PSD for d > 2. Positive identity
+// shrinkage makes the resulting correlation matrix positive definite.
 // =============================================================================
 
 // 64-bit integer for pair counts (N_i*(N_i-1)/2 grows quadratically)
@@ -50,7 +41,7 @@ struct TieBlock {
 // Cached sort information for a single column/variable
 struct SortedColumn {
   arma::vec values; // Sorted observations (for quantile interpolation)
-  arma::uvec order; // Permutation index from original to sorted order
+  arma::uvec order; // Original row indices, listed in ascending value order
   std::vector<TieBlock>
       tie_blocks;         // Contiguous intervals with >= 2 identical values
   count_t tied_pairs = 0; // Total pairs tied in this column: sum choose(len, 2)
@@ -65,11 +56,10 @@ inline count_t choose_two(arma::uword count) {
 SortedColumn sort_column(const arma::vec &x) {
   SortedColumn result;
 
-  // Use stable sort to preserve a deterministic ordering
+  // Preserve the original row order within ties.
   result.order = arma::stable_sort_index(x);
   result.values = x.elem(result.order);
 
-  // Identify contiguous runs of identical values (ties) and count tied pairs
   arma::uword begin = 0;
   while (begin < result.values.n_elem) {
     arma::uword end = begin + 1;
@@ -89,8 +79,8 @@ SortedColumn sort_column(const arma::vec &x) {
 }
 
 // Count inversions in O(N_i log N_i) time during merge-sort.
-// When observations are ordered by x, an inversion in y corresponds to a
-// strictly discordant pair (x_i < x_j and y_i > y_j).
+// After sorting by x and sorting y within each group of tied x values, an
+// inversion in y is a strictly discordant pair (x_i < x_j and y_i > y_j).
 count_t merge_and_count(arma::vec &values, arma::vec &work, arma::uword left,
                         arma::uword right) {
   if (left >= right) {
@@ -131,7 +121,6 @@ count_t merge_and_count(arma::vec &values, arma::vec &work, arma::uword left,
 // Pairs tied in x, tied in y, or tied in both contribute 0 to concordance.
 // Using inclusion-exclusion:
 //   Comparable pairs = Total - Tied_x - Tied_y + Tied_both
-//   Concordant = Comparable - Discordant
 //   Concordant - Discordant = Comparable - 2 * Discordant
 double kendall_tau_a_from_sorted(const SortedColumn &x, const SortedColumn &y,
                                  const arma::vec &y_original) {
@@ -140,9 +129,8 @@ double kendall_tau_a_from_sorted(const SortedColumn &x, const SortedColumn &y,
   arma::vec y_in_x_order = y_original.elem(x.order);
   count_t tied_in_both = 0;
 
-  // Reorder y according to x's permutation.
-  // Within blocks where x is tied, sort y to prevent false discordance counts
-  // and simultaneously count pairs that are tied in both variables.
+  // y is already in x's order. Sort y within each group of tied x values so
+  // those pairs cannot count as discordant; also count ties in both variables.
   for (const TieBlock &block : x.tie_blocks) {
     std::sort(y_in_x_order.memptr() + block.begin,
               y_in_x_order.memptr() + block.end);
@@ -158,13 +146,11 @@ double kendall_tau_a_from_sorted(const SortedColumn &x, const SortedColumn &y,
     }
   }
 
-  // Count strictly discordant pairs via O(N_i log N_i) merge-sort inversion
-  // count
+  // Count strictly discordant pairs in O(N_i log N_i) time.
   arma::vec work(sample_size);
   const count_t discordant =
       merge_and_count(y_in_x_order, work, 0, sample_size - 1);
 
-  // Net concordance score
   const count_t score =
       total_pairs - x.tied_pairs - y.tied_pairs + tied_in_both - 2 * discordant;
 
@@ -173,9 +159,7 @@ double kendall_tau_a_from_sorted(const SortedColumn &x, const SortedColumn &y,
   return std::max(-1.0, std::min(1.0, tau));
 }
 
-// Midpoint of the k-th equal-width probability cell: (k + 0.5) / M.
-// Evaluates quantiles at cell centers in (0, 1), avoiding boundary extremes (0
-// and 1).
+// Probability cell midpoints (k + 0.5) / M avoid the endpoints 0 and 1.
 inline double midpoint_probability(int index, int M) {
   return (static_cast<double>(index) + 0.5) / static_cast<double>(M);
 }
@@ -199,9 +183,8 @@ arma::vec quantiles_type7(const arma::vec &sorted_values, int M) {
   return result;
 }
 
-// Orthogonal projection onto the positive semi-definite (PSD) cone under
-// Frobenius norm: Performs eigenvalue decomposition and clamps negative
-// eigenvalues to zero.
+// Project onto PSD matrices in Frobenius norm by setting negative eigenvalues
+// to zero while retaining the eigenvectors.
 arma::mat project_psd(const arma::mat &matrix) {
   arma::vec eigenvalues;
   arma::mat eigenvectors;
@@ -213,37 +196,56 @@ arma::mat project_psd(const arma::mat &matrix) {
   return eigenvectors * arma::diagmat(eigenvalues) * eigenvectors.t();
 }
 
-// Nearest positive-definite correlation matrix projection (Higham 2002 /
-// Dykstra). Alternates projections between the PSD cone and the unit-diagonal
-// affine space, followed by shrinkage (1 - lambda) * R + lambda * I to
-// guarantee strict PD.
+arma::mat symmetric_sqrt(const arma::mat &matrix);
+
+// Construct a PSD correlation matrix, then apply identity shrinkage.
+// Higham's (2002) algorithm uses Dykstra's alternating projections to approximate
+// the nearest correlation matrix in Frobenius norm.
+// tolerance bounds relative change between iterates; psd_tolerance below
+// determines whether to iterate. A non-null square_root requests the final root.
 arma::mat nearest_correlation(const arma::mat &raw, double shrinkage,
-                              double tolerance = 1e-8,
+                              arma::mat *square_root, double tolerance = 1e-6,
                               int max_iterations = 100) {
   arma::mat y = 0.5 * (raw + raw.t());
   y.diag().ones();
 
-  // Fast path: if the matrix is already PSD (or within numerical tolerance),
-  // apply shrinkage directly and skip iterative projection.
+  // Compute eigenvectors only for a requested root. For PSD input, identity
+  // shrinkage preserves eigenvectors, so the root reuses this decomposition.
   arma::vec raw_eigenvalues;
-  if (!arma::eig_sym(raw_eigenvalues, y)) {
+  arma::mat raw_eigenvectors;
+  const bool decomposed =
+      square_root ? arma::eig_sym(raw_eigenvalues, raw_eigenvectors, y)
+                  : arma::eig_sym(raw_eigenvalues, y);
+  if (!decomposed) {
     Rcpp::stop(
         "Eigenvalue decomposition failed during correlation projection.");
   }
-  if (raw_eigenvalues.min() >= -tolerance) {
+  if (raw_eigenvalues.min() >= 0.0) {
     arma::mat correlation =
         (1.0 - shrinkage) * y + shrinkage * arma::eye(y.n_rows, y.n_cols);
     correlation.diag().ones();
+    if (square_root) {
+      const arma::vec roots =
+          arma::sqrt((1.0 - shrinkage) * raw_eigenvalues + shrinkage);
+      *square_root =
+          raw_eigenvectors * arma::diagmat(roots) * raw_eigenvectors.t();
+      *square_root = 0.5 * (*square_root + square_root->t());
+    }
     return 0.5 * (correlation + correlation.t());
   }
 
-  // Dykstra's alternating projection algorithm
+  // Store the PSD projection minus its input (Dykstra residual). Subtracting
+  // it on the next iteration makes the algorithm target the nearest matrix.
   arma::mat dykstra(y.n_rows, y.n_cols, arma::fill::zeros);
 
-  for (int iteration = 0; iteration < max_iterations; ++iteration) {
+  // Eigenvalues in [-1e-8, 0) need only clipping and diagonal rescaling below.
+  const double psd_tolerance = 1e-8;
+  const int iterations =
+      raw_eigenvalues.min() < -psd_tolerance ? max_iterations : 0;
+  for (int iteration = 0; iteration < iterations; ++iteration) {
     const arma::mat previous = y;
 
-    // Project onto PSD cone and update Dykstra correction
+    // Subtract the stored residual, project onto PSD matrices, and update it.
     const arma::mat residual = y - dykstra;
     const arma::mat psd = project_psd(residual);
     dykstra = psd - residual;
@@ -259,7 +261,8 @@ arma::mat nearest_correlation(const arma::mat &raw, double shrinkage,
     }
   }
 
-  // Final PSD projection and diagonal rescaling: D^{-1/2} R D^{-1/2}
+  // Clip remaining negative eigenvalues. Rescale by D^{-1/2} A D^{-1/2},
+  // D = diag(A), to obtain unit diagonal while preserving PSD.
   arma::mat correlation = project_psd(y);
   const arma::vec diagonal = correlation.diag();
   if (arma::any(diagonal <= std::numeric_limits<double>::epsilon())) {
@@ -270,19 +273,22 @@ arma::mat nearest_correlation(const arma::mat &raw, double shrinkage,
   correlation = 0.5 * (correlation + correlation.t());
   correlation.diag().ones();
 
-  // Shrink toward identity: guarantees all eigenvalues >= shrinkage
+  // Shrink last: mu >= 0 becomes (1 - lambda) * mu + lambda, giving an
+  // eigenvalue lower bound of lambda up to floating-point error.
   correlation = (1.0 - shrinkage) * correlation +
                 shrinkage * arma::eye(correlation.n_rows, correlation.n_cols);
   correlation.diag().ones();
+  if (square_root) {
+    // Diagonal rescaling can change eigenvectors; compute the final root anew.
+    *square_root = symmetric_sqrt(correlation);
+  }
   return 0.5 * (correlation + correlation.t());
 }
 
-// Estimate pairwise latent correlations from pre-sorted columns and project to
-// correlation cone. Uses Gaussian copula sine bridge: rho_{ij} = sin(pi * tau_a
-// / 2).
+// Estimate latent correlations from tau-a using shared column sort orders.
 arma::mat correlation_from_sorted(const arma::mat &data,
                                   const std::vector<SortedColumn> &columns,
-                                  double shrinkage) {
+                                  double shrinkage, arma::mat *square_root) {
   const arma::uword d = data.n_cols;
   arma::mat correlation(d, d, arma::fill::eye);
 
@@ -294,10 +300,15 @@ arma::mat correlation_from_sorted(const arma::mat &data,
     }
   }
 
-  // Symmetrize and project to the nearest strictly positive-definite
-  // correlation matrix
+  // Copy the estimated lower triangle to the upper triangle.
   correlation = arma::symmatl(correlation);
-  return nearest_correlation(correlation, shrinkage);
+  if (d == 2) {
+    // |rho| <= 1 implies eigenvalues 1 +/- rho >= 0. Only shrinkage is needed.
+    const double rho = (1.0 - shrinkage) * correlation(0, 1);
+    correlation(0, 1) = correlation(1, 0) = rho;
+    return correlation;
+  }
+  return nearest_correlation(correlation, shrinkage, square_root);
 }
 
 // Symmetric matrix square root Sigma^{1/2} using Armadillo's sqrtmat_sympd
@@ -335,7 +346,6 @@ Rcpp::List distribution_summaries_cpp(Rcpp::List data, int M,
     Rcpp::stop("Compiled summary input is invalid.");
   }
 
-  // Unpack R list into C++ Armadillo matrices
   std::vector<arma::mat> distributions(number_distributions);
   for (int i = 0; i < number_distributions; ++i) {
     distributions[i] = Rcpp::as<arma::mat>(data[i]);
@@ -343,10 +353,11 @@ Rcpp::List distribution_summaries_cpp(Rcpp::List data, int M,
 
   const arma::uword d = distributions[0].n_cols;
 
-  // Allocate storage for outputs:
-  // - Quantiles: list of d matrices, each of size (n x M)
-  // - Correlations: list of n matrices, each of size (d x d)
-  // - Correlation square roots: optional list of n matrices (d x d)
+  // Bivariate distances use scalar correlations, so skip unused matrix roots.
+  cache_sqrt = cache_sqrt && d > 2;
+
+  // Quantiles: d matrices of size n x M. Correlations and optional roots:
+  // n matrices of size d x d.
   std::vector<arma::mat> quantile_storage(
       d, arma::mat(number_distributions, M, arma::fill::none));
   Rcpp::List correlations(number_distributions);
@@ -354,7 +365,6 @@ Rcpp::List distribution_summaries_cpp(Rcpp::List data, int M,
   Rcpp::IntegerVector sample_sizes(number_distributions);
   arma::mat tied_pair_fractions(number_distributions, d, arma::fill::zeros);
 
-  // Compute summaries for each empirical distribution
   for (int distribution_index = 0; distribution_index < number_distributions;
        ++distribution_index) {
     const arma::mat &current = distributions[distribution_index];
@@ -362,8 +372,7 @@ Rcpp::List distribution_summaries_cpp(Rcpp::List data, int M,
     const count_t total_pairs = choose_two(sample_size);
     sample_sizes[distribution_index] = static_cast<int>(sample_size);
 
-    // 1. Sort each variable once and compute marginal quantiles & tie
-    // diagnostics
+    // Sort each variable once; compute quantiles and tied-pair fractions.
     std::vector<SortedColumn> columns;
     columns.reserve(d);
     for (arma::uword variable = 0; variable < d; ++variable) {
@@ -375,26 +384,22 @@ Rcpp::List distribution_summaries_cpp(Rcpp::List data, int M,
           static_cast<double>(total_pairs);
     }
 
-    // 2. Compute pairwise Kendall's tau-a, sine-bridge, and nearest correlation
-    // matrix
-    const arma::mat correlation =
-        correlation_from_sorted(current, columns, pd_shrinkage);
+    // Estimate and shrink correlations; optionally compute the root.
+    arma::mat square_root;
+    const arma::mat correlation = correlation_from_sorted(
+        current, columns, pd_shrinkage, cache_sqrt ? &square_root : nullptr);
     correlations[distribution_index] = correlation;
 
-    // 3. (Optional) Precompute symmetric square root Sigma^{1/2} for downstream
-    // distance calculations
     if (cache_sqrt) {
-      correlation_sqrts[distribution_index] = symmetric_sqrt(correlation);
+      correlation_sqrts[distribution_index] = square_root;
     }
   }
 
-  // Convert quantile matrices into an R list of length d
   Rcpp::List quantiles(d);
   for (arma::uword variable = 0; variable < d; ++variable) {
     quantiles[variable] = quantile_storage[variable];
   }
 
-  // Construct probability grid vector
   Rcpp::NumericVector probabilities(M);
   for (int k = 0; k < M; ++k) {
     probabilities[k] = midpoint_probability(k, M);

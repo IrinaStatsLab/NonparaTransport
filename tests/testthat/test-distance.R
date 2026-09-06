@@ -1,18 +1,6 @@
 # These tests verify the distance pipeline from cache handling through the two
 # mathematical components and finally against a direct R implementation.
 
-test_that("cached and on-demand matrix square roots give the same distances", {
-  data <- example_distributions()
-  cached <- as_nonparanormal(data, M = 21, cache_sqrt = TRUE)
-  uncached <- as_nonparanormal(data, M = 21, cache_sqrt = FALSE)
-
-  expect_equal(
-    pairwise_npt_distance(cached, decompose = TRUE),
-    pairwise_npt_distance(uncached, decompose = TRUE),
-    tolerance = 1e-12
-  )
-})
-
 test_that("cached roots agree with on-demand roots above dimension two", {
   # The bivariate implementation uses a scalar formula, so d=3 is required to
   # exercise the general matrix-square-root cache path.
@@ -214,9 +202,10 @@ test_that("compiled full matrix agrees with a direct R definition", {
       ))
       first <- summaries$correlations[[i]]
       second <- summaries$correlations[[j]]
+      # Reconstruct the root independently of the package's cache.
+      first_root <- symmetric_sqrt(first)
       middle_root <- symmetric_sqrt(
-        summaries$correlation_sqrts[[i]] %*% second %*%
-          summaries$correlation_sqrts[[i]]
+        first_root %*% second %*% first_root
       )
       expected_correlation[i, j] <-
         sum(diag(first)) + sum(diag(second)) - 2 * sum(diag(middle_root))

@@ -27,14 +27,14 @@ estimated latent correlation matrices are strictly positive definite via
 
 \item{cache_sqrt}{Logical; if \code{TRUE} (default), precomputes and caches
 matrix square roots \eqn{R^{1/2}} to speed up pairwise distance calculations
-when dimension \eqn{d > 2}.}
+when dimension \eqn{d > 2}. For \eqn{d = 2}, roots are not computed or
+cached, even when \code{TRUE}, because bivariate distances use scalar correlations.}
 
 \item{standardize}{Logical; if \code{TRUE}, preprocesses the pooled collection for
 distance computation by subtracting each variable's pooled median
-and dividing by its pooled median absolute deviation (MAD). The MAD is
-\eqn{\operatorname{median}|X-\operatorname{median}(X)|}, without a normal-
-consistency multiplier. The default is \code{FALSE}; regression therefore uses
-the original measurement units unless standardization is explicitly requested.}
+and dividing by its pooled MAD from \code{stats::mad()}. The default is \code{FALSE};
+regression or other methods therefore use original measurement units
+unless standardization is explicitly requested.}
 }
 \value{
 An object of class \code{"nonparanormal"}, containing:
@@ -44,7 +44,9 @@ of dimension \eqn{n \times M}, holding the evaluated marginal quantile functions
 \item{\code{correlations}}{A list of \eqn{n} positive-definite \eqn{d \times d}
 latent correlation matrices.}
 \item{\code{correlation_sqrts}}{A list of \eqn{n} matrix square roots \eqn{R^{1/2}}
-if \code{cache_sqrt = TRUE}, or \code{NULL} otherwise.}
+if \code{cache_sqrt = TRUE} and \eqn{d > 2}, or \code{NULL} otherwise.}
+\item{\code{cache_sqrt}}{The effective caching setting; always \code{FALSE}
+for bivariate data.}
 \item{\code{probabilities}}{Numeric vector containing the \eqn{M}
 probability-interval midpoints in \eqn{(0, 1)}.}
 \item{\code{sample_sizes}}{Named integer vector of sample sizes \eqn{N_i} across distributions.}

@@ -158,14 +158,14 @@ The resulting `nonparanormal` object contains the marginal quantiles and latent 
 
 #### What does `standardize = TRUE` do?
 
-The marginal Wasserstein terms retain the physical units and scales of their variables, whereas the latent correlation term is scale invariant. The distance workflow scales the marginal distributions to have comparable scales. For variable $j$, define
+With `standardize = TRUE`, each variable is centered by its pooled median and scaled by R's `stats::mad()`. For variable $j$, define
 
 $$
 m_j = \operatorname{median}(\mathcal{X}_j), \qquad
-s_j = \operatorname{median}_{x\in\mathcal{X}_j}|x-m_j|,
+s_j = 1.4826\,\operatorname{median}_{x\in\mathcal{X}_j}|x-m_j|,
 $$
 
-where $\mathcal{X}_j$ pools every observation of variable $j$ across all $n$ distributions. Each observation $x$ is replaced by $(x-m_j)/s_j$.
+where $\mathcal{X}_j$ pools every observation of variable $j$ across all $n$ distributions. The median absolute deviation measures the typical absolute distance from the median. R's `mad()` multiplies it by approximately $1.4826$ so that, for normally distributed data, it estimates the standard deviation. This provides a robust scale estimate without requiring the pooled data to be normal. Each observation $x$ is replaced by $(x-m_j)/s_j$.
 
 This transformation places the marginal variables on comparable robust scales. Because the same positive affine transformation is used for every distribution, it leaves the latent copula correlations unchanged.
 
@@ -274,13 +274,13 @@ The resulting 2D embedding clearly separates the 1,000 distributions into distin
 
 ### Marginal Scale Standardization
 
-The marginal 2-Wasserstein terms $d_W^2(P_i^{(j)}, P_k^{(j)})$ retain the physical units and measurement scales of each variable $j$, whereas the latent correlation term $\mathcal{B}^2(\Sigma_i, \Sigma_k)$ is dimensionless and bounded:
+Without standardization, each marginal squared 2-Wasserstein term $d_W^2(P_i^{(j)}, P_k^{(j)})$ is measured in the squared units of variable $j$, whereas the latent correlation term $\mathcal{B}^2(\Sigma_i, \Sigma_k)$ is dimensionless and bounded:
 $$
 0 \le \mathcal{B}^2(\Sigma_i, \Sigma_k) \le 2d - 2\sqrt{d}.
 $$
 If raw variables have widely differing units (e.g., heart rate in bpm vs. body temperature in degrees Celsius), unstandardized marginal differences in large-scale variables could overwhelm both smaller-scale variables and the latent correlation term.
 
-For this reason, `as_nonparanormal(..., standardize = TRUE)` applies pooled median and raw-MAD scaling across the collection by default (as detailed in Section 2), placing all marginal variables on comparable scales while leaving copula correlations invariant.
+The pooled median and `mad()` standardization in Section 2 expresses marginal differences relative to each variable's robust scale. It removes measurement units while preserving latent correlations, but does not force marginal and correlation contributions to be equal. After choosing these marginal scales, `bw_weight` provides a separate way to adjust the relative contribution of dependence differences.
 
 ### Tuning the Latent Correlation Weight ($c$)
 

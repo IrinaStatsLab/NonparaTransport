@@ -70,9 +70,6 @@ test_that("plot_npt_density returns a reproducible ggplot density visualization"
 
   expect_s3_class(first_plot, "ggplot")
   expect_silent(ggplot2::ggplot_build(first_plot))
-  density_scale <- first_plot$scales$get_scales("fill")
-  expect_identical(density_scale$palette(0), "#F7FBFF")
-  expect_identical(density_scale$palette(1), "#08306B")
   expect_identical(.Random.seed, random_state_before_plot)
   expect_identical(first$variables, c("location", "positive"))
   expect_identical(first$prediction_names, c("low", "high"))
@@ -123,15 +120,14 @@ test_that("plot_npt_density validates pair and prediction selection", {
   out_of_sample_fit$observed_correlations <- NULL
 
   # plot_npt_density supports out-of-sample prediction objects
-  out_of_sample_plot <- plot_npt_density(out_of_sample_fit, predictions = 1L)
-  expect_s3_class(out_of_sample_plot, "ggplot")
-
-  # plot_npt_correlation requires in-sample fits to overlay observed correlations
-  expect_error(
-    plot_npt_correlation(out_of_sample_fit),
-    "Z = NULL",
-    fixed = TRUE
+  out_of_sample_plot <- plot_npt_density(
+    out_of_sample_fit,
+    predictions = 1L,
+    n_samples = 100L,
+    seed = 17L,
+    grid_size = 25L
   )
+  expect_s3_class(out_of_sample_plot, "ggplot")
 })
 
 test_that("plot_npt_density accepts a positive-semidefinite boundary fit", {

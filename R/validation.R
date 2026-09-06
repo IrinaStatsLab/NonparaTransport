@@ -123,10 +123,12 @@
 #' Standardize all distributions with pooled robust location and scale
 #'
 #' Distance preprocessing pools observations across distributions within each
-#' variable. Its MAD is the literal sample median absolute deviation and does
-#' not use R's normal-consistency multiplier.
+#' variable. With correction = TRUE, stats::mad() applies its normal-consistency
+#' multiplier (1.4826); FALSE uses median(abs(x - median(x))).
+#' correction is a temporary development option; the public API uses the default.
 #' @noRd
-.standardize_pooled_median_mad <- function(data, variable_names) {
+.standardize_pooled_median_mad <- function(data, variable_names, correction = TRUE) {
+  correction <- .as_flag(correction, "correction")
   number_variables <- ncol(data[[1L]])
   centers <- numeric(number_variables)
   scales <- numeric(number_variables)
@@ -137,7 +139,11 @@
       use.names = FALSE
     )
     centers[variable] <- stats::median(pooled)
-    scales[variable] <- stats::median(abs(pooled - centers[variable]))
+    scales[variable] <- if (correction) {
+      stats::mad(pooled, center = centers[variable])
+    } else {
+      stats::median(abs(pooled - centers[variable]))
+    }
   }
   names(centers) <- variable_names
   names(scales) <- variable_names
